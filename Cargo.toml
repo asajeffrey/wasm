@@ -10,5 +10,8 @@ readme = "README.md"
 keywords = [ "wasm", "web assembly" ]
 license = "MPL-2.0"
 
+[dependencies]
+parsell = "0.2.1"
+
 [dev-dependencies]
 wasm_spec = { git = "https://github.com/asajeffrey/wasm-spec" }

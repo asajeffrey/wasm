@@ -1,6 +1,4 @@
-#![feature(fn_traits, unboxed_closures)]
-
-extern crate core;
+extern crate parsell;
 
 pub mod ast;
 pub mod parser;
