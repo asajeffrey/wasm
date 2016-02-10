@@ -61,7 +61,6 @@ fn mk_whitespace<'a>(s: Cow<'a,str>) -> Token<'a> { Whitespace(s) }
 
 fn mk_number<'a>(s: Cow<'a,str>) -> Result<Token<'a>, LexError> {
     Ok(Number(try!(usize::from_str_radix(&*s, 10))))
-
 }
 
 fn mk_text<'a>(s: Cow<'a,str>) -> Result<Token<'a>,LexError> {
@@ -142,7 +141,7 @@ impl<'a> Committed<&'a str> for WasmLexer {
             .or_else(UNRECOGNIZED);
 
         Box::new(TOKEN.init().boxable())
-            
+
     }
 
 }
