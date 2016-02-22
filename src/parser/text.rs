@@ -1,10 +1,12 @@
 use self::Token::{Begin, End, Identifier, Number, Text, Whitespace};
 use self::LexError::{UnexpectedChar, UnexpectedEOF, UnclosedString, UnparseableInt};
-use self::ParseError::{LexErr};
 
-use parsell::{Parser, Committed, Stateful, Boxable, CHARACTER, character};
+use parsell::{Upcast, ToStatic};
+use parsell::{Parser, Uncommitted, Boxable, ParseResult};
+use parsell::{character, CHARACTER};
 use std::num::ParseIntError;
 use std::borrow::Cow;
+use std::str::Chars;
 
 #[derive(Clone, PartialEq, Eq, Hash, Ord, PartialOrd, Debug)]
 pub enum Token<'a> {
@@ -16,6 +18,26 @@ pub enum Token<'a> {
     Whitespace(Cow<'a,str>),
 }
 
+impl<'a> Upcast<Token<'a>> for Token<'static> {
+    fn upcast(self) -> Token<'a> {
+        self
+    }
+}
+
+impl<'a> ToStatic for Token<'a> {
+    type Static = Token<'static>;
+    fn to_static(self) -> Token<'static> {
+        match self {
+            Begin(kw) => Begin(kw.to_static()),
+            End => End,
+            Identifier(name) => Identifier(name.to_static()),
+            Number(num) => Number(num),
+            Text(string) => Text(string.to_static()),
+            Whitespace(string) => Whitespace(string.to_static()),
+        }
+    }
+}
+
 #[derive(Clone, PartialEq, Debug)]
 pub enum LexError {
     UnexpectedChar(char),
@@ -24,20 +46,9 @@ pub enum LexError {
     UnexpectedEOF,
 }
 
-#[derive(Clone, PartialEq, Debug)]
-pub enum ParseError {
-    LexErr(LexError),
-}
-
 impl From<ParseIntError> for LexError {
     fn from(err: ParseIntError) -> LexError {
         UnparseableInt(err)
-    }
-}
-
-impl From<LexError> for ParseError {
-    fn from(err: LexError) -> ParseError {
-        LexErr(err)
     }
 }
 
@@ -54,16 +65,16 @@ fn is_keyword_char(ch: char) -> bool { ch.is_alphanumeric() || (ch == '.') }
 fn is_identifier_char(ch: char) -> bool { ch.is_alphanumeric() || (ch == '.') || (ch == '$') }
 fn is_unescaped_char(ch: char) -> bool { ch != '"' && ch != '\\' && ch != '\r' && ch != '\n' }
 
-fn mk_begin<'a>(_: char, s: Cow<'a,str>) -> Token<'a> { Begin(s) }
-fn mk_end<'a>(_: char) -> Token<'a> { End }
-fn mk_identifier<'a>(s: Cow<'a,str>) -> Token<'a> { Identifier(s) }
-fn mk_whitespace<'a>(s: Cow<'a,str>) -> Token<'a> { Whitespace(s) }
+fn mk_begin<'a>(_: char, s: Cow<'a,str>) -> Result<Token<'a>, LexError> { Ok(Begin(s)) }
+fn mk_end<'a>(_: char) -> Result<Token<'a>, LexError> { Ok(End) }
+fn mk_identifier<'a>(s: Cow<'a,str>) -> Result<Token<'a>, LexError> { Ok(Identifier(s)) }
+fn mk_whitespace<'a>(s: Cow<'a,str>) -> Result<Token<'a>, LexError> { Ok(Whitespace(s)) }
 
 fn mk_number<'a>(s: Cow<'a,str>) -> Result<Token<'a>, LexError> {
     Ok(Number(try!(usize::from_str_radix(&*s, 10))))
 }
 
-fn mk_text<'a>(s: Cow<'a,str>) -> Result<Token<'a>,LexError> {
+fn mk_text<'a>(s: Cow<'a,str>) -> Result<Token<'a>, LexError> {
     {
         let mut chs = s.chars();
         match chs.next() {
@@ -78,22 +89,28 @@ fn mk_text<'a>(s: Cow<'a,str>) -> Result<Token<'a>,LexError> {
     Ok(Text(s))
 }
 
-fn mk_ok_token<'a>(tok: Token<'a>) -> Result<Token<'a>,LexError> { Ok(tok) }
 fn mk_unexpected_char_err<'a>(ch: Option<char>) -> Result<Token<'a>,LexError> { Err(ch.map_or(UnexpectedEOF, UnexpectedChar)) }
+
+fn mk_lexer_box<Lexer>(lexer: Lexer) -> WasmLexerState
+    where Lexer: 'static + for<'a> Boxable<char, Chars<'a>, Output=Result<Token<'a>, LexError>>
+{
+    Box::new(lexer)
+}
 
 // Work-around for not having impl results yet.
 
+#[derive(Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd, Debug)]
 pub struct WasmLexer;
-pub type WasmLexerState = Box<for<'b> Boxable<&'b str, Output=Result<Token<'b>, LexError>>>;
+pub type WasmLexerState = Box<for<'a> Boxable<char, Chars<'a>, Output=Result<Token<'a>, LexError>>>;
 
 impl Parser for WasmLexer {}
-impl<'a> Committed<&'a str> for WasmLexer {
+impl<'a> Uncommitted<char, Chars<'a>> for WasmLexer {
 
     type Output = Result<Token<'a>, LexError>;
     type State = WasmLexerState;
 
     #[allow(non_snake_case)]
-    fn init(&self) -> WasmLexerState {
+    fn init(&self, data: &mut Chars<'a>) -> Option<ParseResult<Self::State, Self::Output>> {
 
         let BEGIN = character(is_lparen)
             .and_then(character(is_keyword_char).star(ignore).buffer())
@@ -110,9 +127,6 @@ impl<'a> Committed<&'a str> for WasmLexer {
         let WHITESPACE = character(char::is_whitespace).plus(ignore).buffer()
             .map(mk_whitespace);
 
-        let NUMBER = character(char::is_numeric).plus(ignore).buffer()
-            .map(mk_number);
-
         let OPEN_QUOTE = character(is_dbl_quote);
 
         let ESCAPED = character(is_backslash)
@@ -122,25 +136,27 @@ impl<'a> Committed<&'a str> for WasmLexer {
         let UNESCAPED = character(is_unescaped_char)
             .map(discard_char1);
 
+        let UNRECOGNIZED = CHARACTER
+            .map(mk_unexpected_char_err);
+
         let TEXT = OPEN_QUOTE
             .and_then(ESCAPED.or_else(UNESCAPED).star(ignore))
             .and_then(CHARACTER)
             .buffer()
             .map(mk_text);
 
-        let UNRECOGNIZED = CHARACTER
-            .map(mk_unexpected_char_err);
+        let NUMBER = character(char::is_numeric).plus(ignore).buffer()
+            .map(mk_number);
 
-        let TOKEN = BEGIN
-            .or_else(END)
+        let WASM_TOKEN = BEGIN
+             .or_else(END)
             .or_else(IDENTIFIER)
             .or_else(WHITESPACE)
-            .map(mk_ok_token)
             .or_else(TEXT)
             .or_else(NUMBER)
             .or_else(UNRECOGNIZED);
 
-        Box::new(TOKEN.init().boxable())
+        WASM_TOKEN.boxed(mk_lexer_box).init(data)
 
     }
 
@@ -151,18 +167,17 @@ pub const LEXER: WasmLexer = WasmLexer;
 #[test]
 #[allow(non_snake_case)]
 fn test_lexer() {
-    use parsell::Stateful;
+    use parsell::UncommittedStr;
     use parsell::ParseResult::{Done};
     use std::borrow::Cow::{Borrowed};
     let overflow = usize::from_str_radix("983748948934789348763894786345786", 10).unwrap_err();
-    assert_eq!(LEXER.init().parse("(foo!"),Done("!",Ok(Begin(Borrowed("foo")))));
-    assert_eq!(LEXER.init().parse(")!"),Done("!",Ok(End)));
-    assert_eq!(LEXER.init().parse("$abc!"),Done("!",Ok(Identifier(Borrowed("$abc")))));
-    assert_eq!(LEXER.init().parse(" \t\r\n !"),Done("!",Ok(Whitespace(Borrowed(" \t\r\n ")))));
-    assert_eq!(LEXER.init().parse("\"xyz\\t\\\"abc\"!"),Done("!",Ok(Text(Borrowed("\"xyz\\t\\\"abc\"")))));
-    assert_eq!(LEXER.init().parse(" \t\r\n !"),Done("!",Ok(Whitespace(Borrowed(" \t\r\n ")))));
-    assert_eq!(LEXER.init().parse("!!"),Done("!",Err(UnexpectedChar('!'))));
-    assert_eq!(LEXER.init().parse("\"abc\r\"!"),Done("\"!",Err(UnclosedString('\r'))));
-    assert_eq!(LEXER.init().parse("1234567890123456789012345678901234567890!"),Done("!",Err(UnparseableInt(overflow))));
-    assert_eq!(LEXER.init().done(),Err(UnexpectedEOF));
+    assert_eq!(LEXER.init_str("(foo!"),Some(Done(Ok(Begin(Borrowed("foo"))))));
+    assert_eq!(LEXER.init_str(")!"),Some(Done(Ok(End))));
+    assert_eq!(LEXER.init_str("$abc!"),Some(Done(Ok(Identifier(Borrowed("$abc"))))));
+    assert_eq!(LEXER.init_str(" \t\r\n !"),Some(Done(Ok(Whitespace(Borrowed(" \t\r\n "))))));
+    assert_eq!(LEXER.init_str("\"xyz\\t\\\"abc\"!"),Some(Done(Ok(Text(Borrowed("\"xyz\\t\\\"abc\""))))));
+    assert_eq!(LEXER.init_str(" \t\r\n !"),Some(Done(Ok(Whitespace(Borrowed(" \t\r\n "))))));
+    assert_eq!(LEXER.init_str("!!"),Some(Done(Err(UnexpectedChar('!')))));
+    assert_eq!(LEXER.init_str("\"abc\r\"!"),Some(Done(Err(UnclosedString('\r')))));
+    assert_eq!(LEXER.init_str("1234567890123456789012345678901234567890!"),Some(Done(Err(UnparseableInt(overflow))))) ;
 }
