@@ -1,12 +1,18 @@
 use self::Token::{Begin, End, Identifier, Number, Text, Whitespace};
 use self::LexError::{UnexpectedChar, UnexpectedEOF, UnclosedString, UnparseableInt};
+use self::ParseError::{LexErr, ExpectedModuleErr};
+use ast::Module;
 
 use parsell::{Upcast, ToStatic};
 use parsell::{Parser, Uncommitted, Boxable, ParseResult};
-use parsell::{character, CHARACTER};
+use parsell::{character, character_ref, CHARACTER};
 use std::num::ParseIntError;
 use std::borrow::Cow;
 use std::str::Chars;
+use std::iter::Peekable;
+use std::vec::Drain;
+
+// Lexer
 
 #[derive(Clone, PartialEq, Eq, Hash, Ord, PartialOrd, Debug)]
 pub enum Token<'a> {
@@ -149,7 +155,7 @@ impl<'a> Uncommitted<char, Chars<'a>> for WasmLexer {
             .map(mk_number);
 
         let WASM_TOKEN = BEGIN
-             .or_else(END)
+            .or_else(END)
             .or_else(IDENTIFIER)
             .or_else(WHITESPACE)
             .or_else(TEXT)
@@ -181,3 +187,65 @@ fn test_lexer() {
     assert_eq!(LEXER.init_str("\"abc\r\"!"),Some(Done(Err(UnclosedString('\r')))));
     assert_eq!(LEXER.init_str("1234567890123456789012345678901234567890!"),Some(Done(Err(UnparseableInt(overflow))))) ;
 }
+
+// Parser
+
+#[derive(Clone, PartialEq, Debug)]
+pub enum ParseError {
+    LexErr(LexError),
+    ExpectedModuleErr,
+}
+
+impl From<LexError> for ParseError {
+    fn from(err: LexError) -> ParseError {
+        LexErr(err)
+    }
+}
+
+fn is_begin_module<'a>(tok: &Token<'a>) -> bool {
+    match *tok {
+        Begin(ref kw) => (kw == "module"),
+        _ => false,
+    }
+}
+
+fn mk_module<'a>(_: Token<'a>) -> Result<Module, ParseError> { Ok(Module { memory: None, imports: Vec::new(), exports: Vec::new(), functions: Vec::new() }) }
+
+fn mk_expected_module_err<'a>(_: Option<Token<'a>>) -> Result<Module, ParseError> { Err(ExpectedModuleErr) }
+
+fn mk_parser_box<P>(parser: P) -> WasmParserState
+    where P: 'static + for<'a> Boxable<Token<'a>, Tokens<'a>, Output=Result<Module, ParseError>>
+{
+    Box::new(parser)
+}
+
+#[derive(Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd, Debug)]
+pub struct WasmParser;
+pub type WasmParserState = Box<for<'a> Boxable<Token<'a>, Tokens<'a>, Output=Result<Module, ParseError>>>;
+
+pub type Tokens<'a> = Peekable<Drain<'a, Token<'a>>>; // A placeholder
+
+impl Parser for WasmParser {}
+impl<'a> Uncommitted<Token<'a>, Tokens<'a>> for WasmParser {
+
+    type Output = Result<Module, ParseError>;
+    type State = WasmParserState;
+
+    #[allow(non_snake_case)]
+    fn init(&self, data: &mut Tokens<'a>) -> Option<ParseResult<Self::State, Self::Output>> {
+
+        let MODULE = character_ref(is_begin_module)
+            .map(mk_module);
+
+        let EXPECTED_MODULE = CHARACTER
+            .map(mk_expected_module_err);
+
+        let TOP_LEVEL = MODULE
+            .or_else(EXPECTED_MODULE);
+
+        TOP_LEVEL.boxed(mk_parser_box).init(data)
+
+    }
+
+}
+
