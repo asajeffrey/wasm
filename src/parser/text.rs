@@ -237,12 +237,6 @@ fn mk_ok_token<'a>(tok: Token<'a>) -> Result<Token<'a>, ParseError> { Ok(tok) }
 fn mk_expected_module_err<'a>(_: Option<Token<'a>>) -> Result<Module, ParseError> { Err(ExpectedModuleErr) }
 fn mk_expected_end_err<'a>(_: Option<Token<'a>>) -> Result<Token<'a>, ParseError> { Err(ExpectedEndErr) }
 
-fn mk_memory_box<P>(parser: P) -> MemoryParserState
-    where P: 'static + for<'a> Boxable<Token<'a>, Tokens<'a>, Output=Result<Memory, ParseError>>
-{
-    Box::new(parser)
-}
-
 fn must_be_end<'a>(tok: Option<Token<'a>>) -> Result<(), ParseError> {
     match tok {
         Some(End) => Ok(()),
@@ -250,15 +244,22 @@ fn must_be_end<'a>(tok: Option<Token<'a>>) -> Result<(), ParseError> {
     }
 }
 
+pub type ParserOutput<T> = Result<T, ParseError>;
+pub type ParserState<T> = Box<for<'a> Boxable<Token<'a>, Tokens<'a>, Output=Result<T, ParseError>>>;
+
+fn mk_parser_box<P, T>(parser: P) -> ParserState<T>
+    where P: 'static + for<'a> Boxable<Token<'a>, Tokens<'a>, Output=Result<T, ParseError>>
+{
+    Box::new(parser)
+}
+
 #[derive(Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd, Debug)]
 pub struct MemoryParser;
-pub type MemoryParserState = Box<for<'a> Boxable<Token<'a>, Tokens<'a>, Output=Result<Memory, ParseError>>>;
-
 impl Parser for MemoryParser {}
 impl<'a> Uncommitted<Token<'a>, Tokens<'a>> for MemoryParser {
 
-    type Output = Result<Memory, ParseError>;
-    type State = MemoryParserState;
+    type Output = ParserOutput<Memory>;
+    type State = ParserState<Memory>;
 
     #[allow(non_snake_case)]
     fn init(&self, data: &mut Tokens<'a>) -> Option<ParseResult<Self::State, Self::Output>> {
@@ -266,7 +267,8 @@ impl<'a> Uncommitted<Token<'a>, Tokens<'a>> for MemoryParser {
         character_ref(is_begin_memory)
             .and_then_try_discard(CHARACTER.map(must_be_end))
             .try_map(mk_memory)
-            .boxed(mk_memory_box).init(data)
+            .boxed(mk_parser_box)
+            .init(data)
             
     }
 
@@ -274,21 +276,13 @@ impl<'a> Uncommitted<Token<'a>, Tokens<'a>> for MemoryParser {
 
 pub const MEMORY: MemoryParser = MemoryParser;
 
-fn mk_module_box<P>(parser: P) -> ModuleParserState
-    where P: 'static + for<'a> Boxable<Token<'a>, Tokens<'a>, Output=Result<Module, ParseError>>
-{
-    Box::new(parser)
-}
-
 #[derive(Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd, Debug)]
 pub struct ModuleParser;
-pub type ModuleParserState = Box<for<'a> Boxable<Token<'a>, Tokens<'a>, Output=Result<Module, ParseError>>>;
-
 impl Parser for ModuleParser {}
 impl<'a> Uncommitted<Token<'a>, Tokens<'a>> for ModuleParser {
 
-    type Output = Result<Module, ParseError>;
-    type State = ModuleParserState;
+    type Output = ParserOutput<Module>;
+    type State = ParserState<Module>;
 
     #[allow(non_snake_case)]
     fn init(&self, data: &mut Tokens<'a>) -> Option<ParseResult<Self::State, Self::Output>> {
@@ -296,7 +290,7 @@ impl<'a> Uncommitted<Token<'a>, Tokens<'a>> for ModuleParser {
         character_ref(is_begin_module)
             .discard_and_then(MEMORY.star(mk_module))
             .try_and_then_try_discard(CHARACTER.map(must_be_end))
-            .boxed(mk_module_box)
+            .boxed(mk_parser_box)
             .init(data)
             
     }
