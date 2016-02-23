@@ -105,7 +105,7 @@ impl StaticMarker for LexError {}
 //     Box::new(lexer)
 // }
 
-// // Work-around for not having impl results yet.
+// Work-around for not having impl results yet.
 
 // #[derive(Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd, Debug)]
 // pub struct WasmLexer;
@@ -230,7 +230,7 @@ fn is_end<'a>(tok: &Token<'a>) -> bool {
     }
 }
 
-fn mk_memory<'a>(_: Token<'a>, _: Token<'a>) -> Memory { Memory { init: 0, max: None, segments: Vec::new() } }
+fn mk_memory<'a>(_: Token<'a>) -> Memory { Memory { init: 0, max: None, segments: Vec::new() } }
 fn mk_module<'a>() -> Result<Module, ParseError> { Ok(Module::new()) }
 
 fn mk_ok_token<'a>(tok: Token<'a>) -> Result<Token<'a>, ParseError> { Ok(tok) }
@@ -241,6 +241,13 @@ fn mk_memory_box<P>(parser: P) -> MemoryParserState
     where P: 'static + for<'a> Boxable<Token<'a>, Tokens<'a>, Output=Result<Memory, ParseError>>
 {
     Box::new(parser)
+}
+
+fn must_be_end<'a>(tok: Option<Token<'a>>) -> Result<(), ParseError> {
+    match tok {
+        Some(End) => Ok(()),
+        _ => Err(ExpectedEndErr),
+    }
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd, Debug)]
@@ -256,19 +263,16 @@ impl<'a> Uncommitted<Token<'a>, Tokens<'a>> for MemoryParser {
     #[allow(non_snake_case)]
     fn init(&self, data: &mut Tokens<'a>) -> Option<ParseResult<Self::State, Self::Output>> {
 
-        let END = character_ref(is_end).map(mk_ok_token)
-            .or_else(CHARACTER.map(mk_expected_end_err));
-
         character_ref(is_begin_memory)
-            .and_then_try(END)
-            .try_map2(mk_memory)
+            .and_then_try_discard(CHARACTER.map(must_be_end))
+            .try_map(mk_memory)
             .boxed(mk_memory_box).init(data)
             
     }
 
 }
 
-const MEMORY: MemoryParser = MemoryParser;
+pub const MEMORY: MemoryParser = MemoryParser;
 
 fn mk_module_box<P>(parser: P) -> ModuleParserState
     where P: 'static + for<'a> Boxable<Token<'a>, Tokens<'a>, Output=Result<Module, ParseError>>
@@ -289,12 +293,9 @@ impl<'a> Uncommitted<Token<'a>, Tokens<'a>> for ModuleParser {
     #[allow(non_snake_case)]
     fn init(&self, data: &mut Tokens<'a>) -> Option<ParseResult<Self::State, Self::Output>> {
 
-        let END = character_ref(is_end).map(mk_ok_token)
-            .or_else(CHARACTER.map(mk_expected_end_err));
-
         character_ref(is_begin_module)
             .discard_and_then(MEMORY.star(mk_module))
-            .try_and_then_try_discard(END)
+            .try_and_then_try_discard(CHARACTER.map(must_be_end))
             .boxed(mk_module_box)
             .init(data)
             
@@ -302,3 +303,4 @@ impl<'a> Uncommitted<Token<'a>, Tokens<'a>> for ModuleParser {
 
 }
 
+pub const MODULE: ModuleParser = ModuleParser;
