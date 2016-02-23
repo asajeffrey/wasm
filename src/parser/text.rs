@@ -1,6 +1,6 @@
 use self::Token::{Begin, End, Identifier, Number, Text, Whitespace};
 use self::LexError::{UnexpectedChar, UnexpectedEOF, UnclosedString, UnparseableInt};
-use self::ParseError::{LexErr, ExpectedModuleErr, ExpectedEndErr};
+use self::ParseError::{LexErr, ExpectedModuleErr, ExpectedEndErr, ExpectedNumberErr};
 use ast::{Memory, Module};
 
 use parsell::{Upcast, ToStatic, StaticMarker};
@@ -196,6 +196,7 @@ impl StaticMarker for LexError {}
 pub enum ParseError {
     LexErr(LexError),
     ExpectedModuleErr,
+    ExpectedNumberErr,
     ExpectedEndErr,
 }
 
@@ -223,19 +224,26 @@ fn is_begin_memory<'a>(tok: &Token<'a>) -> bool {
     }
 }
 
-fn is_end<'a>(tok: &Token<'a>) -> bool {
+fn is_number<'a>(tok: &Token<'a>) -> bool {
     match *tok {
-        End => true,
+        Number(_) => true,
         _ => false,
     }
 }
 
-fn mk_memory<'a>(_: Token<'a>) -> Memory { Memory { init: 0, max: None, segments: Vec::new() } }
-fn mk_module<'a>() -> Result<Module, ParseError> { Ok(Module::new()) }
+fn unwrap_number<'a>(tok: Token<'a>) -> usize {
+    match tok {
+        Number(num) => num,
+        _ => panic!("not a number"),
+    }
+}
 
-fn mk_ok_token<'a>(tok: Token<'a>) -> Result<Token<'a>, ParseError> { Ok(tok) }
-fn mk_expected_module_err<'a>(_: Option<Token<'a>>) -> Result<Module, ParseError> { Err(ExpectedModuleErr) }
-fn mk_expected_end_err<'a>(_: Option<Token<'a>>) -> Result<Token<'a>, ParseError> { Err(ExpectedEndErr) }
+fn must_be_number<'a>(tok: Option<Token<'a>>) -> Result<usize, ParseError> {
+    match tok {
+        Some(Number(num)) => Ok(num),
+        _ => Err(ExpectedNumberErr),
+    }
+}
 
 fn must_be_end<'a>(tok: Option<Token<'a>>) -> Result<(), ParseError> {
     match tok {
@@ -243,6 +251,9 @@ fn must_be_end<'a>(tok: Option<Token<'a>>) -> Result<(), ParseError> {
         _ => Err(ExpectedEndErr),
     }
 }
+
+fn mk_memory<'a>(init: usize, max: Option<usize>) -> Memory { Memory { init: init, max: max, segments: Vec::new() } }
+fn mk_module<'a>() -> Result<Module, ParseError> { Ok(Module::new()) }
 
 pub type ParserOutput<T> = Result<T, ParseError>;
 pub type ParserState<T> = Box<for<'a> Boxable<Token<'a>, Tokens<'a>, Output=Result<T, ParseError>>>;
@@ -265,8 +276,10 @@ impl<'a> Uncommitted<Token<'a>, Tokens<'a>> for MemoryParser {
     fn init(&self, data: &mut Tokens<'a>) -> Option<ParseResult<Self::State, Self::Output>> {
 
         character_ref(is_begin_memory)
-            .and_then_try_discard(CHARACTER.map(must_be_end))
-            .try_map(mk_memory)
+            .discard_and_then(CHARACTER.map(must_be_number))
+            .try_and_then(character_ref(is_number).map(unwrap_number).opt())
+            .try_and_then_try_discard(CHARACTER.map(must_be_end))
+            .try_map2(mk_memory)
             .boxed(mk_parser_box)
             .init(data)
             
