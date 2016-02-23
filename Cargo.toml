@@ -14,4 +14,4 @@ license = "MPL-2.0"
 parsell = "0.4.3"
 
 [dev-dependencies]
-wasm_spec = { git = "https://github.com/asajeffrey/wasm-spec" }
+# wasm_spec = { git = "https://github.com/asajeffrey/wasm-spec" }

@@ -1,3 +1,4 @@
+#![feature(drain)]
 extern crate parsell;
 
 pub mod ast;

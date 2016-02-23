@@ -66,7 +66,7 @@ pub struct Var {
 }
 
 impl Module {
-    fn new() -> Module {
+    pub fn new() -> Module {
         Module{ memory: Vec::new(), imports: Vec::new(), exports: Vec::new(), functions: Vec::new() }
     }
 }
