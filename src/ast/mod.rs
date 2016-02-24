@@ -77,5 +77,6 @@ impl Consumer<Memory> for Module {
     }
 }
 
+impl StaticMarker for Segment {}
 impl StaticMarker for Memory {}
 impl StaticMarker for Module {}
