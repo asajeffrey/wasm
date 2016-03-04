@@ -1,11 +1,12 @@
 use self::Token::{Begin, End, Identifier, Number, Text, Whitespace};
 use self::LexError::{UnexpectedEscape, UnexpectedChar, UnexpectedEOF, UnclosedString, UnparseableInt};
-use self::ParseError::{LexErr, ExpectedModuleErr, ExpectedEndErr, ExpectedNumberErr, ExpectedTextErr};
-use ast::{Memory, Module, Segment};
+use self::ParseError::{LexErr, ExpectedEndErr, ExpectedNumberErr};
+use ast::{Memory, Module};
 
 use parsell::{Upcast, Downcast, ToStatic, StaticMarker};
 use parsell::{Parser, Uncommitted, Boxable, ParseResult, HasOutput, InState, Stateful};
-use parsell::{emit, character, character_ref, CHARACTER};
+use parsell::{character, character_ref, CHARACTER};
+use parsell::ParseResult::{Done, Continue};
 use std::num::ParseIntError;
 use std::borrow::Cow;
 use std::borrow::Cow::Borrowed;
@@ -66,8 +67,6 @@ impl From<ParseIntError> for LexError {
 impl StaticMarker for LexError {}
 
 fn ignore() {}
-fn discard_char1(_: char) {}
-fn discard_char2(_: char, _: Option<char>) {}
 
 fn is_lparen(ch: char) -> bool { ch == '(' }
 fn is_rparen(ch: char) -> bool { ch == ')' }
@@ -108,12 +107,6 @@ fn mk_text<'a>(s: String) -> Token<'a> {
 
 fn mk_unexpected_char_err<'a>(ch: Option<char>) -> Result<Token<'a>,LexError> { Err(ch.map_or(UnexpectedEOF, UnexpectedChar)) }
 
-fn mk_lexer_state<Lexer>(lexer: Lexer) -> WasmLexerState
-    where Lexer: 'static + for<'a> Boxable<char, Chars<'a>, Result<Token<'a>, LexError>>
-{
-    WasmLexer.in_state(Box::new(lexer))
-}
-
 fn mk_ok_string() -> Result<String, LexError> {
     Ok(String::new())
 }
@@ -126,6 +119,11 @@ fn must_be_dbl_quote(ch: Option<char>) -> Result<(), LexError> {
     }
 }
 
+fn mk_lexer_state<Lexer>(lexer: Lexer) -> WasmLexerState
+    where Lexer: 'static + for<'a> Boxable<char, Chars<'a>, Result<Token<'a>, LexError>>
+{
+    WasmLexer.in_state(Box::new(lexer))
+}
 
 // Work-around for not having impl results yet.
 
@@ -224,9 +222,7 @@ fn test_lexer() {
 #[derive(Clone, PartialEq, Debug)]
 pub enum ParseError {
     LexErr(LexError),
-    ExpectedModuleErr,
     ExpectedNumberErr,
-    ExpectedTextErr,
     ExpectedEndErr,
 }
 
@@ -252,66 +248,122 @@ fn is_begin_memory<'a>(tok: &Token<'a>) -> bool {
     }
 }
 
-fn mk_memory<'a>(_: Token<'a>) -> Memory { Memory { init: 0, max: None, segments: Vec::new() } }
-fn mk_module<'a>() -> Result<Module, ParseError> { Ok(Module::new()) }
+fn mk_memory<'a>(init: usize, _: Token<'a>) -> Memory {
+    Memory { init: init, max: None, segments: Vec::new() }
+}
 
-fn mk_ok_token<'a>(tok: Token<'a>) -> Result<Token<'a>, ParseError> { Ok(tok) }
-fn mk_expected_module_err<'a>(_: Option<Token<'a>>) -> Result<Module, ParseError> { Err(ExpectedModuleErr) }
-fn mk_expected_end_err<'a>(_: Option<Token<'a>>) -> Result<Token<'a>, ParseError> { Err(ExpectedEndErr) }
+fn mk_module<'a>(_: Option<Memory>, _: Token<'a>) -> Module {
+    Module::new()
+}
 
-fn must_be_end<'a>(tok: Option<Token<'a>>) -> Result<(), ParseError> {
+fn must_be_end<'a>(tok: Option<Token<'a>>) -> Result<Token<'a>, ParseError> {
     match tok {
-        Some(End) => Ok(()),
+        Some(End) => Ok(End),
         _ => Err(ExpectedEndErr),
     }
 }
 
-fn mk_parser_state<P>(parser: P) -> WasmParserState
-    where P: 'static + for<'a> Boxable<Token<'a>, Tokens<'a>, Result<Module, ParseError>>
-{
-    WasmParser.in_state(Box::new(parser))
+fn must_be_number<'a>(tok: Option<Token<'a>>) -> Result<usize, ParseError> {
+    match tok {
+        Some(Number(num)) => Ok(num),
+        _ => Err(ExpectedNumberErr),
+    }
 }
 
-#[derive(Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd, Debug)]
-pub struct WasmParser;
-pub type WasmParserState = InState<WasmParser, Box<for<'a> Boxable<Token<'a>, Tokens<'a>, Result<Module, ParseError>>>>;
+fn mk_parser_state<P, T>(parser: P) -> WasmParserState<T>
+    where P: 'static + for<'a> Boxable<Token<'a>, Tokens<'a>, WasmParserOutput<T>>
+{
+    WasmParserState(Box::new(parser))
+}
 
+pub struct WasmParserState<T> (Box<for<'a> Boxable<Token<'a>, Tokens<'a>, WasmParserOutput<T>>>);
+
+impl<'a,T> HasOutput<Token<'a>, Tokens<'a>> for WasmParserState<T> {
+
+    type Output = WasmParserOutput<T>;
+
+}
+impl<'a,T> Stateful<Token<'a>, Tokens<'a>, WasmParserOutput<T>> for WasmParserState<T> {
+
+    fn more(self, string: &mut Tokens<'a>) -> ParseResult<WasmParserState<T>, WasmParserOutput<T>> {
+        match self.0.more(string) {
+            Done(result) => Done(result),
+            Continue(parsing) => Continue(WasmParserState(parsing)),
+        }
+    }
+
+    fn done(self) -> WasmParserOutput<T> {
+        self.0.done()
+    }
+    
+}
+
+pub type WasmParserOutput<T> = Result<T, ParseError>;
 pub type Tokens<'a> = Peekable<Drain<'a, Token<'a>>>; // A placeholder
 
-impl Parser for WasmParser {}
+#[derive(Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd, Debug)]
+pub struct MEMORY;
+impl Parser for MEMORY {}
+impl<'a> HasOutput<Token<'a>, Tokens<'a>> for MEMORY {
 
-impl<'a> HasOutput<Token<'a>, Tokens<'a>> for WasmParser {
-
-    type Output = Result<Module, ParseError>;
+    type Output = WasmParserOutput<Memory>;
 
 }
+impl<'a> Uncommitted<Token<'a>, Tokens<'a>, WasmParserOutput<Memory>> for MEMORY {
 
-impl<'a> Uncommitted<Token<'a>, Tokens<'a>, Result<Module, ParseError>> for WasmParser {
-
-    type State = WasmParserState;
+    type State = WasmParserState<Memory>;
 
     #[allow(non_snake_case)]
-    fn init(&self, data: &mut Tokens<'a>) -> Option<ParseResult<WasmParserState, Result<Module, ParseError>>> {
+    fn init(&self, data: &mut Tokens<'a>) -> Option<ParseResult<WasmParserState<Memory>, WasmParserOutput<Memory>>> {
 
-        let END = CHARACTER.map(must_be_end);
-
-        let MEMORY = character_ref(is_begin_memory)
-            .map(mk_memory)
-            .and_then_try_discard(END);
-
-        let MODULE = character_ref(is_begin_module)
-            .discard_and_then(MEMORY.star(mk_module))
-            .try_and_then_try_discard(END);
-
-        let EXPECTED_MODULE = CHARACTER
-            .map(mk_expected_module_err);
-
-        let TOP_LEVEL = MODULE
-            .or_else(EXPECTED_MODULE);
-
-        TOP_LEVEL.boxed(mk_parser_state).init(data)
+        character_ref(is_begin_memory)
+            .discard_and_then(CHARACTER.map(must_be_number))
+            .try_and_then_try(CHARACTER.map(must_be_end))
+            .try_map2(mk_memory)
+            .boxed(mk_parser_state)
+            .init(data)
             
     }
 
 }
 
+#[derive(Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd, Debug)]
+pub struct MODULE;
+impl Parser for MODULE {}
+impl<'a> HasOutput<Token<'a>, Tokens<'a>> for MODULE {
+
+    type Output = WasmParserOutput<Module>;
+
+}
+impl<'a> Uncommitted<Token<'a>, Tokens<'a>, WasmParserOutput<Module>> for MODULE {
+
+    type State = WasmParserState<Module>;
+
+    #[allow(non_snake_case)]
+    fn init(&self, data: &mut Tokens<'a>) -> Option<ParseResult<WasmParserState<Module>, WasmParserOutput<Module>>> {
+
+        character_ref(is_begin_module)
+            .discard_and_then(MEMORY.try_opt())
+            .try_and_then_try(CHARACTER.map(must_be_end))
+            .try_map2(mk_module)
+            .boxed(mk_parser_state)
+            .init(data)
+            
+    }
+
+}
+
+#[test]
+fn test_parser() {
+    use parsell::ParseResult::Done;
+    let mut input = vec![
+        Begin(Borrowed("module")),
+        End,
+    ];
+    let output = Module::new();
+    let mut iter = input.drain(..).peekable();
+    assert_eq!(
+        MODULE.init(&mut iter),
+        Some(Done(Ok(output)))
+    )
+}
