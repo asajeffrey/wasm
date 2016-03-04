@@ -21,6 +21,7 @@ pub struct Function {
     pub body: Vec<Expr>,
 }
 
+
 #[derive(Clone, Eq, PartialEq, Hash, Ord, PartialOrd, Debug)]
 pub struct Import {
     pub func: String,
@@ -65,6 +66,8 @@ pub struct Var {
     pub typ: Typ,
 }
 
+impl StaticMarker for Export {}
 impl StaticMarker for Segment {}
 impl StaticMarker for Memory {}
 impl StaticMarker for Module {}
+impl StaticMarker for Typ {}

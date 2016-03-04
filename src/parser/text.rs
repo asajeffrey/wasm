@@ -1,7 +1,7 @@
-use self::Token::{Begin, End, Identifier, Number, Text, Whitespace};
+use self::Token::{Begin, End, Identifier, Number, Text, Type, Whitespace};
 use self::LexError::{UnexpectedEscape, UnexpectedChar, UnexpectedEOF, UnclosedString, UnparseableInt};
-use self::ParseError::{LexErr, ExpectedEndErr, ExpectedNumberErr, ExpectedTextErr};
-use ast::{Memory, Module, Segment};
+use self::ParseError::{LexErr, ExpectedEndErr, ExpectedIdentifierErr, ExpectedNumberErr, ExpectedTextErr, ExpectedTypeErr};
+use ast::{Export, Import, Memory, Module, Segment, Typ, Var};
 
 use parsell::{Upcast, Downcast, ToStatic, StaticMarker};
 use parsell::{Parser, Uncommitted, Boxable, ParseResult, HasOutput, InState, Stateful};
@@ -23,6 +23,7 @@ pub enum Token<'a> {
     Identifier(Cow<'a,str>),
     Number(usize),
     Text(String),
+    Type(Typ),
     Whitespace(Cow<'a,str>),
 }
 
@@ -40,6 +41,7 @@ impl<'a> Downcast<Token<'static>> for Token<'a> {
             Identifier(name) => Identifier(name.downcast()),
             Number(num) => Number(num),
             Text(string) => Text(string),
+            Type(typ) => Type(typ),
             Whitespace(string) => Whitespace(string.downcast()),
         }
     }
@@ -179,7 +181,7 @@ impl<'a> Uncommitted<char, Chars<'a>, Result<Token<'a>, LexError>> for WasmLexer
 
         let NUMBER = character(char::is_numeric).plus(ignore).buffer()
             .map(mk_number);
-        
+
         let UNRECOGNIZED = CHARACTER
             .map(mk_unexpected_char_err);
 
@@ -189,8 +191,8 @@ impl<'a> Uncommitted<char, Chars<'a>, Result<Token<'a>, LexError>> for WasmLexer
             .or_else(WHITESPACE)
             .or_else(TEXT)
             .or_else(NUMBER)
-            .or_else(UNRECOGNIZED); 
-        
+            .or_else(UNRECOGNIZED);
+
         WASM_TOKEN.boxed(mk_lexer_state).init(data)
 
     }
@@ -222,9 +224,11 @@ fn test_lexer() {
 #[derive(Clone, PartialEq, Debug)]
 pub enum ParseError {
     LexErr(LexError),
-    ExpectedNumberErr,
     ExpectedEndErr,
+    ExpectedIdentifierErr,
+    ExpectedNumberErr,
     ExpectedTextErr,
+    ExpectedTypeErr,
 }
 
 impl From<LexError> for ParseError {
@@ -234,6 +238,20 @@ impl From<LexError> for ParseError {
 }
 
 impl StaticMarker for ParseError {}
+
+fn is_begin_export<'a>(tok: &Token<'a>) -> bool {
+    match *tok {
+        Begin(ref kw) => (kw == "export"),
+        _ => false,
+    }
+}
+
+fn is_begin_import<'a>(tok: &Token<'a>) -> bool {
+    match *tok {
+        Begin(ref kw) => (kw == "import"),
+        _ => false,
+    }
+}
 
 fn is_begin_module<'a>(tok: &Token<'a>) -> bool {
     match *tok {
@@ -245,6 +263,13 @@ fn is_begin_module<'a>(tok: &Token<'a>) -> bool {
 fn is_begin_memory<'a>(tok: &Token<'a>) -> bool {
     match *tok {
         Begin(ref kw) => (kw == "memory"),
+        _ => false,
+    }
+}
+
+fn is_begin_param<'a>(tok: &Token<'a>) -> bool {
+    match *tok {
+        Begin(ref kw) => (kw == "param"),
         _ => false,
     }
 }
@@ -263,6 +288,14 @@ fn is_number<'a>(tok: &Token<'a>) -> Option<usize> {
     }
 }
 
+fn mk_export<'a>(name: String, func: String, _: Token<'a>) -> Export {
+    Export { name: name, func: func }
+}
+
+fn mk_import<'a>(func: String, module: String, name: String,  _: Token<'a>) -> Import {
+    Import { func: func, module: module, name: name, params: Vec::new(), result: None }
+}
+
 fn mk_memory<'a>(init: usize, max: Option<usize>, segments: Vec<Segment>, _: Token<'a>) -> Memory {
     Memory { init: init, max: max, segments: segments }
 }
@@ -275,6 +308,10 @@ fn mk_segment<'a>(addr: usize, data: String, _: Token<'a>) -> Segment {
     Segment { addr: addr, data: data }
 }
 
+fn mk_var<'a>(name: String, typ: Typ, _: Token<'a>) -> Var {
+    Var { name: name, typ: typ }
+}
+
 fn mk_ok_vec<T>() -> Result<Vec<T>, ParseError> {
     Ok(Vec::new())
 }
@@ -283,6 +320,13 @@ fn must_be_end<'a>(tok: Option<Token<'a>>) -> Result<Token<'a>, ParseError> {
     match tok {
         Some(End) => Ok(End),
         _ => Err(ExpectedEndErr),
+    }
+}
+
+fn must_be_identifier<'a>(tok: Option<Token<'a>>) -> Result<String, ParseError> {
+    match tok {
+        Some(Identifier(name)) => Ok(name.into_owned()),
+        _ => Err(ExpectedIdentifierErr),
     }
 }
 
@@ -297,6 +341,13 @@ fn must_be_text<'a>(tok: Option<Token<'a>>) -> Result<String, ParseError> {
     match tok {
         Some(Text(text)) => Ok(text),
         _ => Err(ExpectedTextErr),
+    }
+}
+
+fn must_be_type<'a>(tok: Option<Token<'a>>) -> Result<Typ, ParseError> {
+    match tok {
+        Some(Type(typ)) => Ok(typ),
+        _ => Err(ExpectedTypeErr),
     }
 }
 
@@ -325,11 +376,93 @@ impl<'a,T> Stateful<Token<'a>, Tokens<'a>, WasmParserOutput<T>> for WasmParserSt
     fn done(self) -> WasmParserOutput<T> {
         self.0.done()
     }
-    
+
 }
 
 pub type WasmParserOutput<T> = Result<T, ParseError>;
 pub type Tokens<'a> = Peekable<Drain<'a, Token<'a>>>; // A placeholder
+
+#[derive(Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd, Debug)]
+pub struct EXPORT;
+impl Parser for EXPORT {}
+impl<'a> HasOutput<Token<'a>, Tokens<'a>> for EXPORT {
+
+    type Output = WasmParserOutput<Export>;
+
+}
+impl<'a> Uncommitted<Token<'a>, Tokens<'a>, WasmParserOutput<Export>> for EXPORT {
+
+    type State = WasmParserState<Export>;
+
+    #[allow(non_snake_case)]
+    fn init(&self, data: &mut Tokens<'a>) -> Option<ParseResult<WasmParserState<Export>, WasmParserOutput<Export>>> {
+
+        character_ref(is_begin_export)
+            .discard_and_then(CHARACTER.map(must_be_text))
+            .try_and_then_try(CHARACTER.map(must_be_identifier))
+            .try_and_then_try(CHARACTER.map(must_be_end))
+            .try_map3(mk_export)
+            .boxed(mk_parser_state)
+            .init(data)
+
+    }
+
+}
+
+#[derive(Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd, Debug)]
+pub struct IMPORT;
+impl Parser for IMPORT {}
+impl<'a> HasOutput<Token<'a>, Tokens<'a>> for IMPORT {
+
+    type Output = WasmParserOutput<Import>;
+
+}
+impl<'a> Uncommitted<Token<'a>, Tokens<'a>, WasmParserOutput<Import>> for IMPORT {
+
+    type State = WasmParserState<Import>;
+
+    #[allow(non_snake_case)]
+    fn init(&self, data: &mut Tokens<'a>) -> Option<ParseResult<WasmParserState<Import>, WasmParserOutput<Import>>> {
+
+        character_ref(is_begin_import)
+            .discard_and_then(CHARACTER.map(must_be_identifier))
+            .try_and_then_try(CHARACTER.map(must_be_text))
+            .try_and_then_try(CHARACTER.map(must_be_text))
+            .try_and_then_try(CHARACTER.map(must_be_end))
+            .try_map4(mk_import)
+            .boxed(mk_parser_state)
+            .init(data)
+
+    }
+
+}
+
+#[derive(Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd, Debug)]
+pub struct PARAM;
+impl Parser for PARAM {}
+impl<'a> HasOutput<Token<'a>, Tokens<'a>> for PARAM {
+
+    type Output = WasmParserOutput<Var>;
+
+}
+impl<'a> Uncommitted<Token<'a>, Tokens<'a>, WasmParserOutput<Var>> for PARAM {
+
+    type State = WasmParserState<Var>;
+
+    #[allow(non_snake_case)]
+    fn init(&self, data: &mut Tokens<'a>) -> Option<ParseResult<WasmParserState<Var>, WasmParserOutput<Var>>> {
+
+        character_ref(is_begin_param)
+            .discard_and_then(CHARACTER.map(must_be_text))
+            .try_and_then_try(CHARACTER.map(must_be_type))
+            .try_and_then_try(CHARACTER.map(must_be_end))
+            .try_map3(mk_var)
+            .boxed(mk_parser_state)
+            .init(data)
+
+    }
+
+}
 
 #[derive(Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd, Debug)]
 pub struct SEGMENT;
@@ -353,7 +486,7 @@ impl<'a> Uncommitted<Token<'a>, Tokens<'a>, WasmParserOutput<Segment>> for SEGME
             .try_map3(mk_segment)
             .boxed(mk_parser_state)
             .init(data)
-            
+
     }
 
 }
@@ -407,7 +540,7 @@ impl<'a> Uncommitted<Token<'a>, Tokens<'a>, WasmParserOutput<Module>> for MODULE
             .try_map2(mk_module)
             .boxed(mk_parser_state)
             .init(data)
-            
+
     }
 
 }
