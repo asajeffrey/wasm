@@ -1,4 +1,4 @@
-use parsell::{Consumer, StaticMarker};
+use parsell::{StaticMarker};
 
 #[derive(Clone, Eq, PartialEq, Hash, Ord, PartialOrd, Debug)]
 pub struct Export {
@@ -39,7 +39,7 @@ pub struct Memory {
 
 #[derive(Clone, Eq, PartialEq, Hash, Ord, PartialOrd, Debug)]
 pub struct Module {
-    pub memory: Vec<Memory>,
+    pub memory: Option<Memory>,
     pub imports: Vec<Import>,
     pub exports: Vec<Export>,
     pub functions: Vec<Function>,
@@ -63,18 +63,6 @@ pub enum Typ {
 pub struct Var {
     pub name: String,
     pub typ: Typ,
-}
-
-impl Module {
-    pub fn new() -> Module {
-        Module{ memory: Vec::new(), imports: Vec::new(), exports: Vec::new(), functions: Vec::new() }
-    }
-}
-        
-impl Consumer<Memory> for Module {
-    fn accept(&mut self, mem: Memory) {
-        self.memory.accept(mem)
-    }
 }
 
 impl StaticMarker for Segment {}

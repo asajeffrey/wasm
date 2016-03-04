@@ -1,11 +1,11 @@
 use self::Token::{Begin, End, Identifier, Number, Text, Whitespace};
 use self::LexError::{UnexpectedEscape, UnexpectedChar, UnexpectedEOF, UnclosedString, UnparseableInt};
-use self::ParseError::{LexErr, ExpectedEndErr, ExpectedNumberErr};
-use ast::{Memory, Module};
+use self::ParseError::{LexErr, ExpectedEndErr, ExpectedNumberErr, ExpectedTextErr};
+use ast::{Memory, Module, Segment};
 
 use parsell::{Upcast, Downcast, ToStatic, StaticMarker};
 use parsell::{Parser, Uncommitted, Boxable, ParseResult, HasOutput, InState, Stateful};
-use parsell::{character, character_ref, CHARACTER};
+use parsell::{character, character_ref, character_map_ref, CHARACTER};
 use parsell::ParseResult::{Done, Continue};
 use std::num::ParseIntError;
 use std::borrow::Cow;
@@ -224,6 +224,7 @@ pub enum ParseError {
     LexErr(LexError),
     ExpectedNumberErr,
     ExpectedEndErr,
+    ExpectedTextErr,
 }
 
 impl From<LexError> for ParseError {
@@ -248,12 +249,34 @@ fn is_begin_memory<'a>(tok: &Token<'a>) -> bool {
     }
 }
 
-fn mk_memory<'a>(init: usize, _: Token<'a>) -> Memory {
-    Memory { init: init, max: None, segments: Vec::new() }
+fn is_begin_segment<'a>(tok: &Token<'a>) -> bool {
+    match *tok {
+        Begin(ref kw) => (kw == "segment"),
+        _ => false,
+    }
 }
 
-fn mk_module<'a>(_: Option<Memory>, _: Token<'a>) -> Module {
-    Module::new()
+fn is_number<'a>(tok: &Token<'a>) -> Option<usize> {
+    match *tok {
+        Number(num) => Some(num),
+        _ => None,
+    }
+}
+
+fn mk_memory<'a>(init: usize, max: Option<usize>, segments: Vec<Segment>, _: Token<'a>) -> Memory {
+    Memory { init: init, max: max, segments: segments }
+}
+
+fn mk_module<'a>(memory: Option<Memory>, _: Token<'a>) -> Module {
+    Module { memory: memory, imports: Vec::new(), exports: Vec::new(), functions: Vec::new() }
+}
+
+fn mk_segment<'a>(addr: usize, data: String, _: Token<'a>) -> Segment {
+    Segment { addr: addr, data: data }
+}
+
+fn mk_ok_vec<T>() -> Result<Vec<T>, ParseError> {
+    Ok(Vec::new())
 }
 
 fn must_be_end<'a>(tok: Option<Token<'a>>) -> Result<Token<'a>, ParseError> {
@@ -267,6 +290,13 @@ fn must_be_number<'a>(tok: Option<Token<'a>>) -> Result<usize, ParseError> {
     match tok {
         Some(Number(num)) => Ok(num),
         _ => Err(ExpectedNumberErr),
+    }
+}
+
+fn must_be_text<'a>(tok: Option<Token<'a>>) -> Result<String, ParseError> {
+    match tok {
+        Some(Text(text)) => Ok(text),
+        _ => Err(ExpectedTextErr),
     }
 }
 
@@ -302,6 +332,33 @@ pub type WasmParserOutput<T> = Result<T, ParseError>;
 pub type Tokens<'a> = Peekable<Drain<'a, Token<'a>>>; // A placeholder
 
 #[derive(Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd, Debug)]
+pub struct SEGMENT;
+impl Parser for SEGMENT {}
+impl<'a> HasOutput<Token<'a>, Tokens<'a>> for SEGMENT {
+
+    type Output = WasmParserOutput<Segment>;
+
+}
+impl<'a> Uncommitted<Token<'a>, Tokens<'a>, WasmParserOutput<Segment>> for SEGMENT {
+
+    type State = WasmParserState<Segment>;
+
+    #[allow(non_snake_case)]
+    fn init(&self, data: &mut Tokens<'a>) -> Option<ParseResult<WasmParserState<Segment>, WasmParserOutput<Segment>>> {
+
+        character_ref(is_begin_segment)
+            .discard_and_then(CHARACTER.map(must_be_number))
+            .try_and_then_try(CHARACTER.map(must_be_text))
+            .try_and_then_try(CHARACTER.map(must_be_end))
+            .try_map3(mk_segment)
+            .boxed(mk_parser_state)
+            .init(data)
+            
+    }
+
+}
+
+#[derive(Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd, Debug)]
 pub struct MEMORY;
 impl Parser for MEMORY {}
 impl<'a> HasOutput<Token<'a>, Tokens<'a>> for MEMORY {
@@ -318,11 +375,13 @@ impl<'a> Uncommitted<Token<'a>, Tokens<'a>, WasmParserOutput<Memory>> for MEMORY
 
         character_ref(is_begin_memory)
             .discard_and_then(CHARACTER.map(must_be_number))
+            .try_and_then(character_map_ref(is_number).opt())
+            .try_and_then_try(SEGMENT.star(mk_ok_vec))
             .try_and_then_try(CHARACTER.map(must_be_end))
-            .try_map2(mk_memory)
+            .try_map4(mk_memory)
             .boxed(mk_parser_state)
             .init(data)
-            
+
     }
 
 }
@@ -358,9 +417,30 @@ fn test_parser() {
     use parsell::ParseResult::Done;
     let mut input = vec![
         Begin(Borrowed("module")),
+            Begin(Borrowed("memory")),
+                Number(0),
+                Begin(Borrowed("segment")),
+                    Number(37),
+                    Text(String::from("abc")),
+                End,
+            End,
         End,
     ];
-    let output = Module::new();
+    let output = Module {
+        memory: Some(Memory {
+            init: 0,
+            max: None,
+            segments: vec![
+                Segment {
+                    addr: 37,
+                    data: String::from("abc")
+                },
+            ],
+        }),
+        imports: vec![],
+        exports: vec![],
+        functions: vec![],
+    };
     let mut iter = input.drain(..).peekable();
     assert_eq!(
         MODULE.init(&mut iter),
