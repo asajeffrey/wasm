@@ -11,7 +11,7 @@ keywords = [ "wasm", "web assembly" ]
 license = "MPL-2.0"
 
 [dependencies]
-parsell = "0.6.4"
+parsell = "0.6.5"
 
 [dev-dependencies]
 # wasm_spec = { git = "https://github.com/asajeffrey/wasm-spec" }
