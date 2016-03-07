@@ -8,8 +8,9 @@ pub struct Export {
 
 #[derive(Clone, Eq, PartialEq, Hash, Ord, PartialOrd, Debug)]
 pub enum Expr {
-    Add(Typ,Box<Expr>,Box<Expr>),
-    Return(usize),
+    ConstExpr(Typ, usize),
+    AddExpr(Typ, Box<Expr>, Box<Expr>),
+    ReturnExpr(usize),
 }
 
 #[derive(Clone, Eq, PartialEq, Hash, Ord, PartialOrd, Debug)]
@@ -66,7 +67,10 @@ pub struct Var {
     pub typ: Typ,
 }
 
+impl StaticMarker for Expr {}
 impl StaticMarker for Export {}
+impl StaticMarker for Function {}
+impl StaticMarker for Import {}
 impl StaticMarker for Segment {}
 impl StaticMarker for Memory {}
 impl StaticMarker for Module {}

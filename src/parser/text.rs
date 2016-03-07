@@ -2,7 +2,9 @@ use self::Token::{Begin, End, Identifier, Number, Text, Type, Whitespace};
 use self::LexError::{UnexpectedEscape, UnexpectedChar, UnexpectedEOF, UnclosedString, UnparseableInt};
 use self::ParseError::{LexErr, ExpectedEndErr, ExpectedIdentifierErr, ExpectedNumberErr, ExpectedTextErr, ExpectedTypeErr};
 use self::Declaration::{ImportDec, ExportDec, FunctionDec};
-use ast::{Export, Function, Import, Memory, Module, Segment, Typ, Var};
+use ast::{Expr, Export, Function, Import, Memory, Module, Segment, Typ, Var};
+use ast::Expr::{ConstExpr};
+use ast::Typ::{F32, F64, I32, I64};
 
 use parsell::{Upcast, Downcast, ToStatic, StaticMarker, Consumer};
 use parsell::{Parser, Uncommitted, Boxable, ParseResult, HasOutput, InState, Stateful};
@@ -247,6 +249,13 @@ fn is_begin_export<'a>(tok: &Token<'a>) -> bool {
     }
 }
 
+fn is_begin_function<'a>(tok: &Token<'a>) -> bool {
+    match *tok {
+        Begin(ref kw) => (kw == "func"),
+        _ => false,
+    }
+}
+
 fn is_begin_import<'a>(tok: &Token<'a>) -> bool {
     match *tok {
         Begin(ref kw) => (kw == "import"),
@@ -264,6 +273,13 @@ fn is_begin_module<'a>(tok: &Token<'a>) -> bool {
 fn is_begin_memory<'a>(tok: &Token<'a>) -> bool {
     match *tok {
         Begin(ref kw) => (kw == "memory"),
+        _ => false,
+    }
+}
+
+fn is_begin_local<'a>(tok: &Token<'a>) -> bool {
+    match *tok {
+        Begin(ref kw) => (kw == "local"),
         _ => false,
     }
 }
@@ -296,8 +312,29 @@ fn is_number<'a>(tok: &Token<'a>) -> Option<usize> {
     }
 }
 
+fn is_begin_const_expr<'a>(tok: &Token<'a>) -> Option<Typ> {
+    match *tok {
+        Begin(ref kw) => match &**kw {
+            "i32.const" => Some(I32),
+            "i64.const" => Some(I64),
+            "f32.const" => Some(F32),
+            "f64.const" => Some(F64),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
+fn mk_const_expr<'a>(typ: Typ, value: usize, _: Token<'a>) -> Expr {
+    ConstExpr(typ, value)
+}
+
 fn mk_export<'a>(name: String, func: String, _: Token<'a>) -> Export {
     Export { name: name, func: func }
+}
+
+fn mk_function<'a>(name: String, params: Vec<Var>, result: Option<Typ>, locals: Vec<Var>, body: Vec<Expr>, _: Token<'a>) -> Function {
+    Function { name: name, params: params, result: result, locals: locals, body: body }
 }
 
 fn mk_import<'a>(func: String, module: String, name: String, params: Vec<Var>, result: Option<Typ>, _: Token<'a>) -> Import {
@@ -424,6 +461,34 @@ pub type WasmParserOutput<T> = Result<T, ParseError>;
 pub type Tokens<'a> = Peekable<Drain<'a, Token<'a>>>; // A placeholder
 
 #[derive(Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd, Debug)]
+pub struct EXPR;
+impl Parser for EXPR {}
+impl<'a> HasOutput<Token<'a>, Tokens<'a>> for EXPR {
+
+    type Output = WasmParserOutput<Expr>;
+
+}
+impl<'a> Uncommitted<Token<'a>, Tokens<'a>, WasmParserOutput<Expr>> for EXPR {
+
+    type State = WasmParserState<Expr>;
+
+    #[allow(non_snake_case)]
+    fn init(&self, data: &mut Tokens<'a>) -> Option<ParseResult<WasmParserState<Expr>, WasmParserOutput<Expr>>> {
+
+        let CONST_EXPR = character_map_ref(is_begin_const_expr)
+            .and_then_try(CHARACTER.map(must_be_number))
+            .try_and_then_try(CHARACTER.map(must_be_end))
+            .try_map3(mk_const_expr);
+
+        CONST_EXPR
+            .boxed(mk_parser_state)
+            .init(data)
+
+    }
+
+}
+
+#[derive(Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd, Debug)]
 pub struct DECLARATION;
 impl Parser for DECLARATION {}
 impl<'a> HasOutput<Token<'a>, Tokens<'a>> for DECLARATION {
@@ -440,6 +505,7 @@ impl<'a> Uncommitted<Token<'a>, Tokens<'a>, WasmParserOutput<Declaration>> for D
 
         IMPORT.try_map(ImportDec)
             .or_else(EXPORT.try_map(ExportDec))
+            .or_else(FUNCTION.try_map(FunctionDec))
             .boxed(mk_parser_state)
             .init(data)
 
@@ -475,6 +541,36 @@ impl<'a> Uncommitted<Token<'a>, Tokens<'a>, WasmParserOutput<Export>> for EXPORT
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd, Debug)]
+pub struct FUNCTION;
+impl Parser for FUNCTION {}
+impl<'a> HasOutput<Token<'a>, Tokens<'a>> for FUNCTION {
+
+    type Output = WasmParserOutput<Function>;
+
+}
+impl<'a> Uncommitted<Token<'a>, Tokens<'a>, WasmParserOutput<Function>> for FUNCTION {
+
+    type State = WasmParserState<Function>;
+
+    #[allow(non_snake_case)]
+    fn init(&self, data: &mut Tokens<'a>) -> Option<ParseResult<WasmParserState<Function>, WasmParserOutput<Function>>> {
+
+        character_ref(is_begin_function)
+            .discard_and_then(CHARACTER.map(must_be_identifier))
+            .try_and_then_try(PARAM.star(mk_ok_vec))
+            .try_and_then_try(RESULT.try_opt())
+            .try_and_then_try(LOCAL.star(mk_ok_vec))
+            .try_and_then_try(EXPR.star(mk_ok_vec))
+            .try_and_then_try(CHARACTER.map(must_be_end))
+            .try_map6(mk_function)
+            .boxed(mk_parser_state)
+            .init(data)
+
+    }
+
+}
+
+#[derive(Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd, Debug)]
 pub struct IMPORT;
 impl Parser for IMPORT {}
 impl<'a> HasOutput<Token<'a>, Tokens<'a>> for IMPORT {
@@ -497,6 +593,33 @@ impl<'a> Uncommitted<Token<'a>, Tokens<'a>, WasmParserOutput<Import>> for IMPORT
             .try_and_then_try(RESULT.try_opt())
             .try_and_then_try(CHARACTER.map(must_be_end))
             .try_map6(mk_import)
+            .boxed(mk_parser_state)
+            .init(data)
+
+    }
+
+}
+
+#[derive(Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd, Debug)]
+pub struct LOCAL;
+impl Parser for LOCAL {}
+impl<'a> HasOutput<Token<'a>, Tokens<'a>> for LOCAL {
+
+    type Output = WasmParserOutput<Var>;
+
+}
+impl<'a> Uncommitted<Token<'a>, Tokens<'a>, WasmParserOutput<Var>> for LOCAL {
+
+    type State = WasmParserState<Var>;
+
+    #[allow(non_snake_case)]
+    fn init(&self, data: &mut Tokens<'a>) -> Option<ParseResult<WasmParserState<Var>, WasmParserOutput<Var>>> {
+
+        character_ref(is_begin_local)
+            .discard_and_then(CHARACTER.map(must_be_identifier))
+            .try_and_then_try(CHARACTER.map(must_be_type))
+            .try_and_then_try(CHARACTER.map(must_be_end))
+            .try_map3(mk_var)
             .boxed(mk_parser_state)
             .init(data)
 
@@ -668,6 +791,23 @@ fn test_parser() {
                 Text(String::from("bar")),
                 Identifier(Borrowed("$foo")),
             End,
+            Begin(Borrowed("func")),
+                Identifier(Borrowed("$foo")),
+                Begin(Borrowed("param")),
+                    Identifier(Borrowed("$x")),
+                    Type(I32),
+                End,
+                Begin(Borrowed("result")),
+                    Type(I64),
+                End,
+                Begin(Borrowed("local")),
+                    Identifier(Borrowed("$y")),
+                    Type(I32),
+                End,
+                Begin(Borrowed("i64.const")),
+                    Number(37),
+                End,
+            End,
         End,
     ];
     let output = Module {
@@ -698,7 +838,21 @@ fn test_parser() {
                 func: String::from("$foo"),
             },
         ],
-        functions: vec![],
+        functions: vec![
+            Function {
+                name: String::from("$foo"),
+                params: vec![
+                    Var { name: String::from("$x"), typ: I32 },
+                ],
+                result: Some(I64),
+                locals: vec![
+                    Var { name: String::from("$y"), typ: I32 },
+                ],
+                body: vec![
+                    ConstExpr(I64, 37),
+                ],
+            },
+        ],
     };
     let mut iter = input.drain(..).peekable();
     assert_eq!(
