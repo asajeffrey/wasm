@@ -274,6 +274,13 @@ fn is_begin_param<'a>(tok: &Token<'a>) -> bool {
     }
 }
 
+fn is_begin_result<'a>(tok: &Token<'a>) -> bool {
+    match *tok {
+        Begin(ref kw) => (kw == "result"),
+        _ => false,
+    }
+}
+
 fn is_begin_segment<'a>(tok: &Token<'a>) -> bool {
     match *tok {
         Begin(ref kw) => (kw == "segment"),
@@ -292,8 +299,8 @@ fn mk_export<'a>(name: String, func: String, _: Token<'a>) -> Export {
     Export { name: name, func: func }
 }
 
-fn mk_import<'a>(func: String, module: String, name: String,  _: Token<'a>) -> Import {
-    Import { func: func, module: module, name: name, params: Vec::new(), result: None }
+fn mk_import<'a>(func: String, module: String, name: String, params: Vec<Var>, result: Option<Typ>, _: Token<'a>) -> Import {
+    Import { func: func, module: module, name: name, params: params, result: result }
 }
 
 fn mk_memory<'a>(init: usize, max: Option<usize>, segments: Vec<Segment>, _: Token<'a>) -> Memory {
@@ -306,6 +313,10 @@ fn mk_module<'a>(memory: Option<Memory>, _: Token<'a>) -> Module {
 
 fn mk_segment<'a>(addr: usize, data: String, _: Token<'a>) -> Segment {
     Segment { addr: addr, data: data }
+}
+
+fn mk_type<'a>(typ: Typ, _: Token<'a>) -> Typ {
+    typ
 }
 
 fn mk_var<'a>(name: String, typ: Typ, _: Token<'a>) -> Var {
@@ -428,8 +439,10 @@ impl<'a> Uncommitted<Token<'a>, Tokens<'a>, WasmParserOutput<Import>> for IMPORT
             .discard_and_then(CHARACTER.map(must_be_identifier))
             .try_and_then_try(CHARACTER.map(must_be_text))
             .try_and_then_try(CHARACTER.map(must_be_text))
+            .try_and_then_try(PARAM.star(mk_ok_vec))
+            .try_and_then_try(RESULT.try_opt())
             .try_and_then_try(CHARACTER.map(must_be_end))
-            .try_map4(mk_import)
+            .try_map6(mk_import)
             .boxed(mk_parser_state)
             .init(data)
 
@@ -453,10 +466,36 @@ impl<'a> Uncommitted<Token<'a>, Tokens<'a>, WasmParserOutput<Var>> for PARAM {
     fn init(&self, data: &mut Tokens<'a>) -> Option<ParseResult<WasmParserState<Var>, WasmParserOutput<Var>>> {
 
         character_ref(is_begin_param)
-            .discard_and_then(CHARACTER.map(must_be_text))
+            .discard_and_then(CHARACTER.map(must_be_identifier))
             .try_and_then_try(CHARACTER.map(must_be_type))
             .try_and_then_try(CHARACTER.map(must_be_end))
             .try_map3(mk_var)
+            .boxed(mk_parser_state)
+            .init(data)
+
+    }
+
+}
+
+#[derive(Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd, Debug)]
+pub struct RESULT;
+impl Parser for RESULT {}
+impl<'a> HasOutput<Token<'a>, Tokens<'a>> for RESULT {
+
+    type Output = WasmParserOutput<Typ>;
+
+}
+impl<'a> Uncommitted<Token<'a>, Tokens<'a>, WasmParserOutput<Typ>> for RESULT {
+
+    type State = WasmParserState<Typ>;
+
+    #[allow(non_snake_case)]
+    fn init(&self, data: &mut Tokens<'a>) -> Option<ParseResult<WasmParserState<Typ>, WasmParserOutput<Typ>>> {
+
+        character_ref(is_begin_result)
+            .discard_and_then(CHARACTER.map(must_be_type))
+            .try_and_then_try(CHARACTER.map(must_be_end))
+            .try_map2(mk_type)
             .boxed(mk_parser_state)
             .init(data)
 
