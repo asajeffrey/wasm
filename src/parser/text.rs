@@ -1,9 +1,10 @@
 use self::Token::{Begin, End, Identifier, Number, Text, Type, Whitespace};
 use self::LexError::{UnexpectedEscape, UnexpectedChar, UnexpectedEOF, UnclosedString, UnparseableInt};
 use self::ParseError::{LexErr, ExpectedEndErr, ExpectedIdentifierErr, ExpectedNumberErr, ExpectedTextErr, ExpectedTypeErr};
-use ast::{Export, Import, Memory, Module, Segment, Typ, Var};
+use self::Declaration::{ImportDec, ExportDec, FunctionDec};
+use ast::{Export, Function, Import, Memory, Module, Segment, Typ, Var};
 
-use parsell::{Upcast, Downcast, ToStatic, StaticMarker};
+use parsell::{Upcast, Downcast, ToStatic, StaticMarker, Consumer};
 use parsell::{Parser, Uncommitted, Boxable, ParseResult, HasOutput, InState, Stateful};
 use parsell::{character, character_ref, character_map_ref, CHARACTER};
 use parsell::ParseResult::{Done, Continue};
@@ -307,8 +308,8 @@ fn mk_memory<'a>(init: usize, max: Option<usize>, segments: Vec<Segment>, _: Tok
     Memory { init: init, max: max, segments: segments }
 }
 
-fn mk_module<'a>(memory: Option<Memory>, _: Token<'a>) -> Module {
-    Module { memory: memory, imports: Vec::new(), exports: Vec::new(), functions: Vec::new() }
+fn mk_module<'a>(memory: Option<Memory>, decs: Declarations, _: Token<'a>) -> Module {
+    Module { memory: memory, imports: decs.imports, exports: decs.exports, functions: decs.functions }
 }
 
 fn mk_segment<'a>(addr: usize, data: String, _: Token<'a>) -> Segment {
@@ -325,6 +326,10 @@ fn mk_var<'a>(name: String, typ: Typ, _: Token<'a>) -> Var {
 
 fn mk_ok_vec<T>() -> Result<Vec<T>, ParseError> {
     Ok(Vec::new())
+}
+
+fn mk_ok_declarations() -> Result<Declarations, ParseError> {
+    Ok(Declarations { imports: Vec::new(), exports: Vec::new(), functions: Vec::new() })
 }
 
 fn must_be_end<'a>(tok: Option<Token<'a>>) -> Result<Token<'a>, ParseError> {
@@ -368,6 +373,31 @@ fn mk_parser_state<P, T>(parser: P) -> WasmParserState<T>
     WasmParserState(Box::new(parser))
 }
 
+pub enum Declaration {
+    ImportDec(Import),
+    ExportDec(Export),
+    FunctionDec(Function),
+}
+
+pub struct Declarations {
+    pub imports: Vec<Import>,
+    pub exports: Vec<Export>,
+    pub functions: Vec<Function>,    
+}
+
+impl StaticMarker for Declaration {}
+impl StaticMarker for Declarations {}
+
+impl Consumer<Declaration> for Declarations {
+    fn accept(&mut self, dec: Declaration) {
+        match dec {
+            ImportDec(import) => self.imports.accept(import),
+            ExportDec(export) => self.exports.accept(export),
+            FunctionDec(function) => self.functions.accept(function),
+        }
+    }
+}
+
 pub struct WasmParserState<T> (Box<for<'a> Boxable<Token<'a>, Tokens<'a>, WasmParserOutput<T>>>);
 
 impl<'a,T> HasOutput<Token<'a>, Tokens<'a>> for WasmParserState<T> {
@@ -392,6 +422,30 @@ impl<'a,T> Stateful<Token<'a>, Tokens<'a>, WasmParserOutput<T>> for WasmParserSt
 
 pub type WasmParserOutput<T> = Result<T, ParseError>;
 pub type Tokens<'a> = Peekable<Drain<'a, Token<'a>>>; // A placeholder
+
+#[derive(Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd, Debug)]
+pub struct DECLARATION;
+impl Parser for DECLARATION {}
+impl<'a> HasOutput<Token<'a>, Tokens<'a>> for DECLARATION {
+
+    type Output = WasmParserOutput<Declaration>;
+
+}
+impl<'a> Uncommitted<Token<'a>, Tokens<'a>, WasmParserOutput<Declaration>> for DECLARATION {
+
+    type State = WasmParserState<Declaration>;
+
+    #[allow(non_snake_case)]
+    fn init(&self, data: &mut Tokens<'a>) -> Option<ParseResult<WasmParserState<Declaration>, WasmParserOutput<Declaration>>> {
+
+        IMPORT.try_map(ImportDec)
+            .or_else(EXPORT.try_map(ExportDec))
+            .boxed(mk_parser_state)
+            .init(data)
+
+    }
+
+}
 
 #[derive(Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd, Debug)]
 pub struct EXPORT;
@@ -575,8 +629,9 @@ impl<'a> Uncommitted<Token<'a>, Tokens<'a>, WasmParserOutput<Module>> for MODULE
 
         character_ref(is_begin_module)
             .discard_and_then(MEMORY.try_opt())
+            .try_and_then_try(DECLARATION.star(mk_ok_declarations))
             .try_and_then_try(CHARACTER.map(must_be_end))
-            .try_map2(mk_module)
+            .try_map3(mk_module)
             .boxed(mk_parser_state)
             .init(data)
 
@@ -587,6 +642,7 @@ impl<'a> Uncommitted<Token<'a>, Tokens<'a>, WasmParserOutput<Module>> for MODULE
 #[test]
 fn test_parser() {
     use parsell::ParseResult::Done;
+    use ast::Typ::{I32, I64};
     let mut input = vec![
         Begin(Borrowed("module")),
             Begin(Borrowed("memory")),
@@ -595,6 +651,22 @@ fn test_parser() {
                     Number(37),
                     Text(String::from("abc")),
                 End,
+            End,
+            Begin(Borrowed("import")),
+                Identifier(Borrowed("$foo")),
+                Text(String::from("bar")),
+                Text(String::from("baz")),
+                Begin(Borrowed("param")),
+                    Identifier(Borrowed("$x")),
+                    Type(I32),
+                End,
+                Begin(Borrowed("result")),
+                    Type(I64),
+                End,
+            End,
+            Begin(Borrowed("export")),
+                Text(String::from("bar")),
+                Identifier(Borrowed("$foo")),
             End,
         End,
     ];
@@ -609,8 +681,23 @@ fn test_parser() {
                 },
             ],
         }),
-        imports: vec![],
-        exports: vec![],
+        imports: vec![
+            Import {
+                func: String::from("$foo"),
+                module: String::from("bar"),
+                name: String::from("baz"),
+                params: vec![
+                    Var { name: String::from("$x"), typ: I32 },
+                ],
+                result: Some(I64),
+            },                
+        ],
+        exports: vec![
+            Export {
+                name: String::from("bar"),
+                func: String::from("$foo"),
+            },
+        ],
         functions: vec![],
     };
     let mut iter = input.drain(..).peekable();
