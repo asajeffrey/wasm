@@ -1,6 +1,33 @@
 use parsell::{StaticMarker};
 
 #[derive(Clone, Eq, PartialEq, Hash, Ord, PartialOrd, Debug)]
+pub enum BinOp {
+    Add,
+    And,
+    DivS,
+    DivU,
+    Eq,
+    GeS,
+    GeU,
+    GtS,
+    GtU,
+    LeS,
+    LeU,
+    LtS,
+    LtU,
+    Mul,
+    Ne,
+    Or,
+    RemS,
+    RemU,
+    Shl,
+    ShrS,
+    ShrU,
+    Sub,
+    Xor,
+}
+
+#[derive(Clone, Eq, PartialEq, Hash, Ord, PartialOrd, Debug)]
 pub struct Export {
     pub name: String,
     pub func: String,
@@ -10,8 +37,7 @@ pub struct Export {
 pub enum Expr {
     ConstExpr(Typ, usize),
     GetLocalExpr(String),
-    AddExpr(Typ, Box<Expr>, Box<Expr>),
-    ReturnExpr(usize),
+    BinOpExpr(Typ, BinOp, Box<Expr>, Box<Expr>),
 }
 
 #[derive(Clone, Eq, PartialEq, Hash, Ord, PartialOrd, Debug)]
@@ -68,6 +94,7 @@ pub struct Var {
     pub typ: Typ,
 }
 
+impl StaticMarker for BinOp {}
 impl StaticMarker for Expr {}
 impl StaticMarker for Export {}
 impl StaticMarker for Function {}

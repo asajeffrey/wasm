@@ -2,8 +2,11 @@ use self::Token::{Begin, End, Identifier, Number, Text, Type, Whitespace};
 use self::LexError::{UnexpectedEscape, UnexpectedChar, UnexpectedEOF, UnclosedString, UnparseableInt};
 use self::ParseError::{LexErr, ExpectedEndErr, ExpectedExprErr, ExpectedIdentifierErr, ExpectedNumberErr, ExpectedTextErr, ExpectedTypeErr};
 use self::Declaration::{ImportDec, ExportDec, FunctionDec};
-use ast::{Expr, Export, Function, Import, Memory, Module, Segment, Typ, Var};
-use ast::Expr::{AddExpr, ConstExpr, GetLocalExpr};
+use ast::{BinOp, Expr, Export, Function, Import, Memory, Module, Segment, Typ, Var};
+use ast::BinOp::{Add, And, DivS, DivU, Eq, GeS, GeU, GtS, GtU, LeS, LeU, LtS, LtU};
+use ast::BinOp::{Mul, Ne, Or, RemS, RemU, Shl, ShrS, ShrU, Sub, Xor};
+
+use ast::Expr::{BinOpExpr, ConstExpr, GetLocalExpr};
 use ast::Typ::{F32, F64, I32, I64};
 
 use parsell::{Upcast, Downcast, ToStatic, StaticMarker, Consumer};
@@ -326,15 +329,40 @@ fn is_begin_const_expr<'a>(tok: &Token<'a>) -> Option<Typ> {
     }
 }
 
-fn is_begin_add_expr<'a>(tok: &Token<'a>) -> Option<Typ> {
+fn is_begin_bin_op_expr<'a>(tok: &Token<'a>) -> Option<(Typ, BinOp)> {
     match *tok {
-        Begin(ref kw) => match &**kw {
-            "i32.add" => Some(I32),
-            "i64.add" => Some(I64),
-            "f32.add" => Some(F32),
-            "f64.add" => Some(F64),
+        Begin(ref kw) => match &kw[0..4] {
+            "i32." => Some(I32),
+            "i64." => Some(I64),
+            "f32." => Some(F32),
+            "f64." => Some(F64),
             _ => None,
-        },
+        }.and_then(|typ| match &kw[4..] {
+            "add" => Some((typ, Add)),
+            "and" => Some((typ, And)),
+            "div_s" => Some((typ, DivS)),
+            "div_u" => Some((typ, DivU)),
+            "eq" => Some((typ, Eq)),
+            "ge_s" => Some((typ, GeS)),
+            "ge_u" => Some((typ, GeU)),
+            "gt_s" => Some((typ, GtS)),
+            "gt_u" => Some((typ, GtU)),
+            "le_s" => Some((typ, LeS)),
+            "le_u" => Some((typ, LeU)),
+            "lt_s" => Some((typ, LtS)),
+            "lt_u" => Some((typ, LtU)),
+            "mul" => Some((typ, Mul)),
+            "ne" => Some((typ, Ne)),
+            "or" => Some((typ, Or)),
+            "rem_s" => Some((typ, RemS)),
+            "rem_u" => Some((typ, RemU)),
+            "shl" => Some((typ, Shl)),
+            "shr_s" => Some((typ, ShrS)),
+            "shr_u" => Some((typ, ShrU)),
+            "sub" => Some((typ, Sub)),
+            "xor" => Some((typ, Xor)),
+            _ => None,
+        }),
         _ => None,
     }
 }
@@ -346,8 +374,8 @@ fn is_begin_get_local_expr<'a>(tok: &Token<'a>) -> bool {
     }
 }
 
-fn mk_add_expr<'a>(typ: Typ, lhs: Expr, rhs: Expr, _: Token<'a>) -> Expr {
-    AddExpr(typ, Box::new(lhs), Box::new(rhs))
+fn mk_bin_op_expr<'a>(typ: Typ, op: BinOp, lhs: Expr, rhs: Expr, _: Token<'a>) -> Expr {
+    BinOpExpr(typ, op, Box::new(lhs), Box::new(rhs))
 }
 
 fn mk_const_expr<'a>(typ: Typ, value: usize, _: Token<'a>) -> Expr {
@@ -510,11 +538,11 @@ impl<'a> Uncommitted<Token<'a>, Tokens<'a>, WasmParserOutput<Expr>> for EXPR {
 
         let EXPECTED_EXPR = CHARACTER.map(mk_expected_expr_err);
         
-        let ADD_EXPR = character_map_ref(is_begin_add_expr)
+        let BIN_OP_EXPR = character_map_ref(is_begin_bin_op_expr)
             .and_then_try(EXPR.or_else(EXPECTED_EXPR))
             .try_and_then_try(EXPR.or_else(EXPECTED_EXPR))
             .try_and_then_try(CHARACTER.map(must_be_end))
-            .try_map4(mk_add_expr);
+            .try_map5(mk_bin_op_expr);
 
         let CONST_EXPR = character_map_ref(is_begin_const_expr)
             .and_then_try(CHARACTER.map(must_be_number))
@@ -526,7 +554,7 @@ impl<'a> Uncommitted<Token<'a>, Tokens<'a>, WasmParserOutput<Expr>> for EXPR {
             .try_and_then_try(CHARACTER.map(must_be_end))
             .try_map2(mk_get_local_expr);
         
-        ADD_EXPR
+        BIN_OP_EXPR
             .or_else(CONST_EXPR)
             .or_else(GET_LOCAL_EXPR)
             .boxed(mk_parser_state)
@@ -558,8 +586,9 @@ fn test_expr_parser() {
                 Number(37),
             End,
         End,
-    ], AddExpr(
+    ], BinOpExpr(
         F32,
+        Add,
         Box::new(ConstExpr(
             F32,
             5
@@ -578,8 +607,9 @@ fn test_expr_parser() {
                 Number(37),
             End,
         End,
-    ], AddExpr(
+    ], BinOpExpr(
         F64,
+        Add,
         Box::new(ConstExpr(
             F64,
             5
@@ -598,8 +628,9 @@ fn test_expr_parser() {
                 Number(37),
             End,
         End,
-    ], AddExpr(
+    ], BinOpExpr(
         I32,
+        Add,
         Box::new(ConstExpr(
             I32,
             5
@@ -618,8 +649,471 @@ fn test_expr_parser() {
                 Number(37),
             End,
         End,
-    ], AddExpr(
+    ], BinOpExpr(
         I64,
+        Add,
+        Box::new(ConstExpr(
+            I64,
+            5
+        )),
+        Box::new(ConstExpr(
+            I64,
+            37
+        )),
+    ));
+    check(&mut vec![
+        Begin(Borrowed("i64.and")),
+            Begin(Borrowed("i64.const")),
+                Number(5),
+            End, 
+            Begin(Borrowed("i64.const")),
+                Number(37),
+            End,
+        End,
+    ], BinOpExpr(
+        I64,
+        And,
+        Box::new(ConstExpr(
+            I64,
+            5
+        )),
+        Box::new(ConstExpr(
+            I64,
+            37
+        )),
+    ));
+    check(&mut vec![
+        Begin(Borrowed("i64.div_s")),
+            Begin(Borrowed("i64.const")),
+                Number(5),
+            End, 
+            Begin(Borrowed("i64.const")),
+                Number(37),
+            End,
+        End,
+    ], BinOpExpr(
+        I64,
+        DivS,
+        Box::new(ConstExpr(
+            I64,
+            5
+        )),
+        Box::new(ConstExpr(
+            I64,
+            37
+        )),
+    ));
+    check(&mut vec![
+        Begin(Borrowed("i64.div_u")),
+            Begin(Borrowed("i64.const")),
+                Number(5),
+            End, 
+            Begin(Borrowed("i64.const")),
+                Number(37),
+            End,
+        End,
+    ], BinOpExpr(
+        I64,
+        DivU,
+        Box::new(ConstExpr(
+            I64,
+            5
+        )),
+        Box::new(ConstExpr(
+            I64,
+            37
+        )),
+    ));
+    check(&mut vec![
+        Begin(Borrowed("i64.eq")),
+            Begin(Borrowed("i64.const")),
+                Number(5),
+            End, 
+            Begin(Borrowed("i64.const")),
+                Number(37),
+            End,
+        End,
+    ], BinOpExpr(
+        I64,
+        Eq,
+        Box::new(ConstExpr(
+            I64,
+            5
+        )),
+        Box::new(ConstExpr(
+            I64,
+            37
+        )),
+    ));
+    check(&mut vec![
+        Begin(Borrowed("i64.ge_s")),
+            Begin(Borrowed("i64.const")),
+                Number(5),
+            End, 
+            Begin(Borrowed("i64.const")),
+                Number(37),
+            End,
+        End,
+    ], BinOpExpr(
+        I64,
+        GeS,
+        Box::new(ConstExpr(
+            I64,
+            5
+        )),
+        Box::new(ConstExpr(
+            I64,
+            37
+        )),
+    ));
+    check(&mut vec![
+        Begin(Borrowed("i64.ge_u")),
+            Begin(Borrowed("i64.const")),
+                Number(5),
+            End, 
+            Begin(Borrowed("i64.const")),
+                Number(37),
+            End,
+        End,
+    ], BinOpExpr(
+        I64,
+        GeU,
+        Box::new(ConstExpr(
+            I64,
+            5
+        )),
+        Box::new(ConstExpr(
+            I64,
+            37
+        )),
+    ));
+    check(&mut vec![
+        Begin(Borrowed("i64.gt_s")),
+            Begin(Borrowed("i64.const")),
+                Number(5),
+            End, 
+            Begin(Borrowed("i64.const")),
+                Number(37),
+            End,
+        End,
+    ], BinOpExpr(
+        I64,
+        GtS,
+        Box::new(ConstExpr(
+            I64,
+            5
+        )),
+        Box::new(ConstExpr(
+            I64,
+            37
+        )),
+    ));
+    check(&mut vec![
+        Begin(Borrowed("i64.gt_u")),
+            Begin(Borrowed("i64.const")),
+                Number(5),
+            End, 
+            Begin(Borrowed("i64.const")),
+                Number(37),
+            End,
+        End,
+    ], BinOpExpr(
+        I64,
+        GtU,
+        Box::new(ConstExpr(
+            I64,
+            5
+        )),
+        Box::new(ConstExpr(
+            I64,
+            37
+        )),
+    ));
+    check(&mut vec![
+        Begin(Borrowed("i64.le_s")),
+            Begin(Borrowed("i64.const")),
+                Number(5),
+            End, 
+            Begin(Borrowed("i64.const")),
+                Number(37),
+            End,
+        End,
+    ], BinOpExpr(
+        I64,
+        LeS,
+        Box::new(ConstExpr(
+            I64,
+            5
+        )),
+        Box::new(ConstExpr(
+            I64,
+            37
+        )),
+    ));
+    check(&mut vec![
+        Begin(Borrowed("i64.le_u")),
+            Begin(Borrowed("i64.const")),
+                Number(5),
+            End, 
+            Begin(Borrowed("i64.const")),
+                Number(37),
+            End,
+        End,
+    ], BinOpExpr(
+        I64,
+        LeU,
+        Box::new(ConstExpr(
+            I64,
+            5
+        )),
+        Box::new(ConstExpr(
+            I64,
+            37
+        )),
+    ));
+    check(&mut vec![
+        Begin(Borrowed("i64.lt_s")),
+            Begin(Borrowed("i64.const")),
+                Number(5),
+            End, 
+            Begin(Borrowed("i64.const")),
+                Number(37),
+            End,
+        End,
+    ], BinOpExpr(
+        I64,
+        LtS,
+        Box::new(ConstExpr(
+            I64,
+            5
+        )),
+        Box::new(ConstExpr(
+            I64,
+            37
+        )),
+    ));
+    check(&mut vec![
+        Begin(Borrowed("i64.lt_u")),
+            Begin(Borrowed("i64.const")),
+                Number(5),
+            End, 
+            Begin(Borrowed("i64.const")),
+                Number(37),
+            End,
+        End,
+    ], BinOpExpr(
+        I64,
+        LtU,
+        Box::new(ConstExpr(
+            I64,
+            5
+        )),
+        Box::new(ConstExpr(
+            I64,
+            37
+        )),
+    ));
+    check(&mut vec![
+        Begin(Borrowed("i64.mul")),
+            Begin(Borrowed("i64.const")),
+                Number(5),
+            End, 
+            Begin(Borrowed("i64.const")),
+                Number(37),
+            End,
+        End,
+    ], BinOpExpr(
+        I64,
+        Mul,
+        Box::new(ConstExpr(
+            I64,
+            5
+        )),
+        Box::new(ConstExpr(
+            I64,
+            37
+        )),
+    ));
+    check(&mut vec![
+        Begin(Borrowed("i64.ne")),
+            Begin(Borrowed("i64.const")),
+                Number(5),
+            End, 
+            Begin(Borrowed("i64.const")),
+                Number(37),
+            End,
+        End,
+    ], BinOpExpr(
+        I64,
+        Ne,
+        Box::new(ConstExpr(
+            I64,
+            5
+        )),
+        Box::new(ConstExpr(
+            I64,
+            37
+        )),
+    ));
+    check(&mut vec![
+        Begin(Borrowed("i64.or")),
+            Begin(Borrowed("i64.const")),
+                Number(5),
+            End, 
+            Begin(Borrowed("i64.const")),
+                Number(37),
+            End,
+        End,
+    ], BinOpExpr(
+        I64,
+        Or,
+        Box::new(ConstExpr(
+            I64,
+            5
+        )),
+        Box::new(ConstExpr(
+            I64,
+            37
+        )),
+    ));
+    check(&mut vec![
+        Begin(Borrowed("i64.rem_s")),
+            Begin(Borrowed("i64.const")),
+                Number(5),
+            End, 
+            Begin(Borrowed("i64.const")),
+                Number(37),
+            End,
+        End,
+    ], BinOpExpr(
+        I64,
+        RemS,
+        Box::new(ConstExpr(
+            I64,
+            5
+        )),
+        Box::new(ConstExpr(
+            I64,
+            37
+        )),
+    ));
+    check(&mut vec![
+        Begin(Borrowed("i64.rem_u")),
+            Begin(Borrowed("i64.const")),
+                Number(5),
+            End, 
+            Begin(Borrowed("i64.const")),
+                Number(37),
+            End,
+        End,
+    ], BinOpExpr(
+        I64,
+        RemU,
+        Box::new(ConstExpr(
+            I64,
+            5
+        )),
+        Box::new(ConstExpr(
+            I64,
+            37
+        )),
+    ));
+    check(&mut vec![
+        Begin(Borrowed("i64.shl")),
+            Begin(Borrowed("i64.const")),
+                Number(5),
+            End, 
+            Begin(Borrowed("i64.const")),
+                Number(37),
+            End,
+        End,
+    ], BinOpExpr(
+        I64,
+        Shl,
+        Box::new(ConstExpr(
+            I64,
+            5
+        )),
+        Box::new(ConstExpr(
+            I64,
+            37
+        )),
+    ));    
+    check(&mut vec![
+        Begin(Borrowed("i64.shr_s")),
+            Begin(Borrowed("i64.const")),
+                Number(5),
+            End, 
+            Begin(Borrowed("i64.const")),
+                Number(37),
+            End,
+        End,
+    ], BinOpExpr(
+        I64,
+        ShrS,
+        Box::new(ConstExpr(
+            I64,
+            5
+        )),
+        Box::new(ConstExpr(
+            I64,
+            37
+        )),
+    ));
+    check(&mut vec![
+        Begin(Borrowed("i64.shr_u")),
+            Begin(Borrowed("i64.const")),
+                Number(5),
+            End, 
+            Begin(Borrowed("i64.const")),
+                Number(37),
+            End,
+        End,
+    ], BinOpExpr(
+        I64,
+        ShrU,
+        Box::new(ConstExpr(
+            I64,
+            5
+        )),
+        Box::new(ConstExpr(
+            I64,
+            37
+        )),
+    ));
+    check(&mut vec![
+        Begin(Borrowed("i64.sub")),
+            Begin(Borrowed("i64.const")),
+                Number(5),
+            End, 
+            Begin(Borrowed("i64.const")),
+                Number(37),
+            End,
+        End,
+    ], BinOpExpr(
+        I64,
+        Sub,
+        Box::new(ConstExpr(
+            I64,
+            5
+        )),
+        Box::new(ConstExpr(
+            I64,
+            37
+        )),
+    ));
+    check(&mut vec![
+        Begin(Borrowed("i64.xor")),
+            Begin(Borrowed("i64.const")),
+                Number(5),
+            End, 
+            Begin(Borrowed("i64.const")),
+                Number(37),
+            End,
+        End,
+    ], BinOpExpr(
+        I64,
+        Xor,
         Box::new(ConstExpr(
             I64,
             5
