@@ -9,6 +9,7 @@ pub struct Export {
 #[derive(Clone, Eq, PartialEq, Hash, Ord, PartialOrd, Debug)]
 pub enum Expr {
     ConstExpr(Typ, usize),
+    GetLocalExpr(String),
     AddExpr(Typ, Box<Expr>, Box<Expr>),
     ReturnExpr(usize),
 }

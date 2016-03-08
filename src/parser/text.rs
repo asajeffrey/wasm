@@ -1,9 +1,9 @@
 use self::Token::{Begin, End, Identifier, Number, Text, Type, Whitespace};
 use self::LexError::{UnexpectedEscape, UnexpectedChar, UnexpectedEOF, UnclosedString, UnparseableInt};
-use self::ParseError::{LexErr, ExpectedEndErr, ExpectedIdentifierErr, ExpectedNumberErr, ExpectedTextErr, ExpectedTypeErr};
+use self::ParseError::{LexErr, ExpectedEndErr, ExpectedExprErr, ExpectedIdentifierErr, ExpectedNumberErr, ExpectedTextErr, ExpectedTypeErr};
 use self::Declaration::{ImportDec, ExportDec, FunctionDec};
 use ast::{Expr, Export, Function, Import, Memory, Module, Segment, Typ, Var};
-use ast::Expr::{ConstExpr};
+use ast::Expr::{AddExpr, ConstExpr, GetLocalExpr};
 use ast::Typ::{F32, F64, I32, I64};
 
 use parsell::{Upcast, Downcast, ToStatic, StaticMarker, Consumer};
@@ -228,6 +228,7 @@ fn test_lexer() {
 pub enum ParseError {
     LexErr(LexError),
     ExpectedEndErr,
+    ExpectedExprErr,
     ExpectedIdentifierErr,
     ExpectedNumberErr,
     ExpectedTextErr,
@@ -325,8 +326,40 @@ fn is_begin_const_expr<'a>(tok: &Token<'a>) -> Option<Typ> {
     }
 }
 
+fn is_begin_add_expr<'a>(tok: &Token<'a>) -> Option<Typ> {
+    match *tok {
+        Begin(ref kw) => match &**kw {
+            "i32.add" => Some(I32),
+            "i64.add" => Some(I64),
+            "f32.add" => Some(F32),
+            "f64.add" => Some(F64),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
+fn is_begin_get_local_expr<'a>(tok: &Token<'a>) -> bool {
+    match *tok {
+        Begin(ref kw) => (kw == "get_local"),
+        _ => false,
+    }
+}
+
+fn mk_add_expr<'a>(typ: Typ, lhs: Expr, rhs: Expr, _: Token<'a>) -> Expr {
+    AddExpr(typ, Box::new(lhs), Box::new(rhs))
+}
+
 fn mk_const_expr<'a>(typ: Typ, value: usize, _: Token<'a>) -> Expr {
     ConstExpr(typ, value)
+}
+
+fn mk_get_local_expr<'a>(name: String, _: Token<'a>) -> Expr {
+    GetLocalExpr(name)
+}
+
+fn mk_expected_expr_err<'a>(_: Option<Token<'a>>) -> Result<Expr, ParseError> { 
+    Err(ExpectedExprErr)
 }
 
 fn mk_export<'a>(name: String, func: String, _: Token<'a>) -> Export {
@@ -475,17 +508,166 @@ impl<'a> Uncommitted<Token<'a>, Tokens<'a>, WasmParserOutput<Expr>> for EXPR {
     #[allow(non_snake_case)]
     fn init(&self, data: &mut Tokens<'a>) -> Option<ParseResult<WasmParserState<Expr>, WasmParserOutput<Expr>>> {
 
+        let EXPECTED_EXPR = CHARACTER.map(mk_expected_expr_err);
+        
+        let ADD_EXPR = character_map_ref(is_begin_add_expr)
+            .and_then_try(EXPR.or_else(EXPECTED_EXPR))
+            .try_and_then_try(EXPR.or_else(EXPECTED_EXPR))
+            .try_and_then_try(CHARACTER.map(must_be_end))
+            .try_map4(mk_add_expr);
+
         let CONST_EXPR = character_map_ref(is_begin_const_expr)
             .and_then_try(CHARACTER.map(must_be_number))
             .try_and_then_try(CHARACTER.map(must_be_end))
             .try_map3(mk_const_expr);
 
-        CONST_EXPR
+        let GET_LOCAL_EXPR = character_ref(is_begin_get_local_expr)
+            .discard_and_then(CHARACTER.map(must_be_identifier))
+            .try_and_then_try(CHARACTER.map(must_be_end))
+            .try_map2(mk_get_local_expr);
+        
+        ADD_EXPR
+            .or_else(CONST_EXPR)
+            .or_else(GET_LOCAL_EXPR)
             .boxed(mk_parser_state)
             .init(data)
 
     }
 
+}
+
+#[test]
+fn test_expr_parser() {
+    fn check<'a>(input: &'a mut Vec<Token<'a>>, output: Expr) {
+        use parsell::ParseResult::Done;
+        let mut iter: Tokens<'a> = input.drain(..).peekable();
+        let result = EXPR.init(&mut iter);
+        if iter.peek().is_some() {
+            println!("Unmatched input:");
+            for tok in iter { println!("{:?}", tok); }
+            panic!("Result: {:?}.", result);
+        }
+        assert_eq!(result, Some(Done(Ok(output))));
+    }
+    check(&mut vec![
+        Begin(Borrowed("f32.add")),
+            Begin(Borrowed("f32.const")),
+                Number(5),
+            End, 
+            Begin(Borrowed("f32.const")),
+                Number(37),
+            End,
+        End,
+    ], AddExpr(
+        F32,
+        Box::new(ConstExpr(
+            F32,
+            5
+        )),
+        Box::new(ConstExpr(
+            F32,
+            37
+        )),
+    ));
+    check(&mut vec![
+        Begin(Borrowed("f64.add")),
+            Begin(Borrowed("f64.const")),
+                Number(5),
+            End, 
+            Begin(Borrowed("f64.const")),
+                Number(37),
+            End,
+        End,
+    ], AddExpr(
+        F64,
+        Box::new(ConstExpr(
+            F64,
+            5
+        )),
+        Box::new(ConstExpr(
+            F64,
+            37
+        )),
+    ));
+    check(&mut vec![
+        Begin(Borrowed("i32.add")),
+            Begin(Borrowed("i32.const")),
+                Number(5),
+            End, 
+            Begin(Borrowed("i32.const")),
+                Number(37),
+            End,
+        End,
+    ], AddExpr(
+        I32,
+        Box::new(ConstExpr(
+            I32,
+            5
+        )),
+        Box::new(ConstExpr(
+            I32,
+            37
+        )),
+    ));
+    check(&mut vec![
+        Begin(Borrowed("i64.add")),
+            Begin(Borrowed("i64.const")),
+                Number(5),
+            End, 
+            Begin(Borrowed("i64.const")),
+                Number(37),
+            End,
+        End,
+    ], AddExpr(
+        I64,
+        Box::new(ConstExpr(
+            I64,
+            5
+        )),
+        Box::new(ConstExpr(
+            I64,
+            37
+        )),
+    ));
+    check(&mut vec![
+        Begin(Borrowed("f32.const")),
+            Number(37),
+        End,
+    ], ConstExpr(
+        F32,
+        37
+    ));
+    check(&mut vec![
+        Begin(Borrowed("f64.const")),
+            Number(37),
+        End,
+    ], ConstExpr(
+        F64,
+        37
+    ));
+    check(&mut vec![
+        Begin(Borrowed("i32.const")),
+            Number(37),
+        End,
+    ], ConstExpr(
+        I32,
+        37
+    ));
+    check(&mut vec![
+        Begin(Borrowed("i64.const")),
+            Number(37),
+        End,
+    ], ConstExpr(
+        I64,
+        37
+    ));
+    check(&mut vec![
+        Begin(Borrowed("get_local")),
+            Identifier(Borrowed("$x")),
+        End,
+    ], GetLocalExpr(
+        String::from("$x")
+    ));
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd, Debug)]
@@ -763,7 +945,7 @@ impl<'a> Uncommitted<Token<'a>, Tokens<'a>, WasmParserOutput<Module>> for MODULE
 }
 
 #[test]
-fn test_parser() {
+fn test_module_parser() {
     use parsell::ParseResult::Done;
     use ast::Typ::{I32, I64};
     let mut input = vec![
