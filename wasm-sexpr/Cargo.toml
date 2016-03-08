@@ -1,0 +1,18 @@
+[package]
+
+name = "wasm_sexpr"
+version = "0.0.1"
+authors = [ "Alan Jeffrey <ajeffrey@mozilla.com>" ]
+
+description = "Web Assembly S-expression parser library for Rust"
+repository = "https://github.com/asajeffrey/wasm/wasm-sexpr"
+readme = "README.md"
+keywords = [ "wasm", "web assembly" ]
+license = "MPL-2.0"
+
+[dependencies]
+parsell = "0.6.5"
+wasm_ast = { version = "0.0.1", path = "../wasm-ast" }
+
+[dev-dependencies]
+# wasm_spec = { git = "https://github.com/asajeffrey/wasm-spec" }

@@ -1,3 +1,5 @@
+extern crate parsell;
+
 use parsell::{StaticMarker};
 
 #[derive(Clone, Eq, PartialEq, Hash, Ord, PartialOrd, Debug)]

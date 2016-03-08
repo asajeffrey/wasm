@@ -1,0 +1,14 @@
+[package]
+
+name = "wasm_ast"
+version = "0.0.1"
+authors = [ "Alan Jeffrey <ajeffrey@mozilla.com>" ]
+
+description = "Web Assembly abstact syntax tree library for Rust"
+repository = "https://github.com/asajeffrey/wasm/wasm-ast"
+readme = "../README.md"
+keywords = [ "wasm", "web assembly" ]
+license = "MPL-2.0"
+
+[dependencies]
+parsell = "0.6.5"
