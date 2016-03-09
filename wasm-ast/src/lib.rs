@@ -22,6 +22,8 @@ pub enum BinOp {
     Or,
     RemS,
     RemU,
+    RotL,
+    RotR,
     Shl,
     ShrS,
     ShrU,
