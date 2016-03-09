@@ -27,6 +27,7 @@ pub enum Expr {
     BinOpExpr(Typ, BinOp, Box<Expr>, Box<Expr>),
     ConstExpr(Const),
     GetLocalExpr(VarUse),
+    GrowMemoryExpr(Box<Expr>),
     LoadExpr(Typ, Box<Expr>),
     StoreExpr(Typ, Box<Expr>, Box<Expr>),
 }

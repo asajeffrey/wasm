@@ -3,11 +3,13 @@ extern crate wasm_ast;
 
 use byteorder::{ByteOrder, LittleEndian};
 
+use std::iter::repeat;
+
 use wasm_ast::{BinOp, Expr};
 use wasm_ast::BinOp::{Add, And, DivS, DivU, Eq, GeS, GeU, GtS, GtU, LeS, LeU, LtS, LtU};
 use wasm_ast::BinOp::{Mul, Ne, Or, RemS, RemU, RotL, RotR, Shl, ShrS, ShrU, Sub, Xor};
 use wasm_ast::Const::{F32Const, F64Const, I32Const, I64Const};
-use wasm_ast::Expr::{BinOpExpr, ConstExpr, GetLocalExpr, LoadExpr, StoreExpr};
+use wasm_ast::Expr::{BinOpExpr, ConstExpr, GetLocalExpr, GrowMemoryExpr, LoadExpr, StoreExpr};
 use wasm_ast::Typ::{F32, F64, I32, I64};
 
 trait Interpreter<T> {
@@ -46,6 +48,12 @@ trait Interpreter<T> {
             &ConstExpr(I32Const(value)) => self.interpret_i32(value),
             &ConstExpr(I64Const(value)) => self.interpret_i64(value),
             &GetLocalExpr(ref var) => self.interpret_i64(locals[var.position]),
+            &GrowMemoryExpr(ref ext) => {
+                let result: u32 = heap.len() as u32;
+                let ext: u32 = self.interpret_expr(ext, locals, heap);
+                heap.extend(repeat(0).take(ext as usize));
+                self.interpret_i32(result)
+            },                
             &LoadExpr(F32, ref addr) => {
                 let addr: u32 = self.interpret_expr(addr, locals, heap);
                 let value: f32 = LittleEndian::read_f32(&heap[addr as usize..]);
