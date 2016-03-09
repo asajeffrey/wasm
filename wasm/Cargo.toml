@@ -14,3 +14,4 @@ license = "MPL-2.0"
 parsell = "0.6.5"
 wasm_ast = { version = "0.0.1", path = "../wasm-ast" }
 wasm_sexpr = { version = "0.0.1", path = "../wasm-sexpr" }
+wasm_interpreter = { version = "0.0.1", path = "../wasm-interpreter" }
