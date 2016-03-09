@@ -4,31 +4,8 @@ use parsell::{StaticMarker};
 
 #[derive(Clone, Eq, PartialEq, Hash, Ord, PartialOrd, Debug)]
 pub enum BinOp {
-    Add,
-    And,
-    DivS,
-    DivU,
-    Eq,
-    GeS,
-    GeU,
-    GtS,
-    GtU,
-    LeS,
-    LeU,
-    LtS,
-    LtU,
-    Mul,
-    Ne,
-    Or,
-    RemS,
-    RemU,
-    RotL,
-    RotR,
-    Shl,
-    ShrS,
-    ShrU,
-    Sub,
-    Xor,
+    Add, And, DivS, DivU, Eq, GeS, GeU, GtS, GtU, LeS, LeU, LtS, LtU,
+    Mul, Ne, Or, RemS, RemU, RotL, RotR, Shl, ShrS, ShrU, Sub, Xor
 }
 
 #[derive(Clone, Eq, PartialEq, Hash, Ord, PartialOrd, Debug)]
@@ -37,19 +14,27 @@ pub struct Export {
     pub func: String,
 }
 
-#[derive(Clone, Eq, PartialEq, Hash, Ord, PartialOrd, Debug)]
-pub enum Expr {
-    ConstExpr(Typ, usize),
-    GetLocalExpr(String),
-    BinOpExpr(Typ, BinOp, Box<Expr>, Box<Expr>),
+#[derive(Clone, PartialEq, PartialOrd, Debug)]
+pub enum Const {
+    F32Const(f32),
+    F64Const(f64),
+    I32Const(u32),
+    I64Const(u64),
 }
 
-#[derive(Clone, Eq, PartialEq, Hash, Ord, PartialOrd, Debug)]
+#[derive(Clone, PartialEq, PartialOrd, Debug)]
+pub enum Expr {
+    BinOpExpr(Typ, BinOp, Box<Expr>, Box<Expr>),
+    ConstExpr(Const),
+    GetLocalExpr(VarUse),
+}
+
+#[derive(Clone, PartialEq, PartialOrd, Debug)]
 pub struct Function {
     pub name: String,
-    pub params: Vec<Var>,
+    pub params: Vec<VarDec>,
     pub result: Option<Typ>,
-    pub locals: Vec<Var>,
+    pub locals: Vec<VarDec>,
     pub body: Vec<Expr>,
 }
 
@@ -59,7 +44,7 @@ pub struct Import {
     pub func: String,
     pub module: String,
     pub name: String,
-    pub params: Vec<Var>,
+    pub params: Vec<VarDec>,
     pub result: Option<Typ>,
 }
 
@@ -70,7 +55,7 @@ pub struct Memory {
     pub segments: Vec<Segment>,
 }
 
-#[derive(Clone, Eq, PartialEq, Hash, Ord, PartialOrd, Debug)]
+#[derive(Clone, PartialEq, PartialOrd, Debug)]
 pub struct Module {
     pub memory: Option<Memory>,
     pub imports: Vec<Import>,
@@ -93,12 +78,19 @@ pub enum Typ {
 }
 
 #[derive(Clone, Eq, PartialEq, Hash, Ord, PartialOrd, Debug)]
-pub struct Var {
-    pub name: String,
+pub struct VarDec {
+    pub name: Option<String>,
     pub typ: Typ,
 }
 
+#[derive(Clone, Eq, PartialEq, Hash, Ord, PartialOrd, Debug)]
+pub struct VarUse {
+    pub name: Option<String>,
+    pub position: usize,
+}
+
 impl StaticMarker for BinOp {}
+impl StaticMarker for Const {}
 impl StaticMarker for Expr {}
 impl StaticMarker for Export {}
 impl StaticMarker for Function {}
@@ -107,3 +99,5 @@ impl StaticMarker for Segment {}
 impl StaticMarker for Memory {}
 impl StaticMarker for Module {}
 impl StaticMarker for Typ {}
+impl StaticMarker for VarDec {}
+impl StaticMarker for VarUse {}

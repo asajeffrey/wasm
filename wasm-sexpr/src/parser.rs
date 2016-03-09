@@ -4,9 +4,10 @@ use self::Declaration::{ImportDec, ExportDec, FunctionDec};
 use lexer::{Token, LexError};
 use lexer::Token::{Begin, End, Identifier, Number, Text, Type};
 
-use wasm_ast::{BinOp, Expr, Export, Function, Import, Memory, Module, Segment, Typ, Var};
+use wasm_ast::{BinOp, Expr, Export, Function, Import, Memory, Module, Segment, Typ, VarDec, VarUse};
 use wasm_ast::BinOp::{Add, And, DivS, DivU, Eq, GeS, GeU, GtS, GtU, LeS, LeU, LtS, LtU};
 use wasm_ast::BinOp::{Mul, Ne, Or, RemS, RemU, Shl, ShrS, ShrU, Sub, Xor};
+use wasm_ast::Const::{F32Const, F64Const, I32Const, I64Const};
 use wasm_ast::Expr::{BinOpExpr, ConstExpr, GetLocalExpr};
 use wasm_ast::Typ::{F32, F64, I32, I64};
 
@@ -107,6 +108,14 @@ fn is_number<'a>(tok: &Token<'a>) -> Option<usize> {
     }
 }
 
+fn is_identifier<'a>(tok: &Token<'a>) -> Option<String> {
+    match *tok {
+        // TODO: Get rid of this cloning
+        Identifier(ref name) => Some(name.clone().into_owned()),
+        _ => None,
+    }
+}
+
 fn is_begin_const_expr<'a>(tok: &Token<'a>) -> Option<Typ> {
     match *tok {
         Begin(ref kw) => match &**kw {
@@ -170,11 +179,18 @@ fn mk_bin_op_expr<'a>(typ: Typ, op: BinOp, lhs: Expr, rhs: Expr, _: Token<'a>) -
 }
 
 fn mk_const_expr<'a>(typ: Typ, value: usize, _: Token<'a>) -> Expr {
-    ConstExpr(typ, value)
+    // TODO: parse floats and -ve numbers properly
+    match typ {
+        F32 => ConstExpr(F32Const(value as f32)),
+        F64 => ConstExpr(F64Const(value as f64)),
+        I32 => ConstExpr(I32Const(value as u32)),
+        I64 => ConstExpr(I64Const(value as u64)),
+    }
 }
 
-fn mk_get_local_expr<'a>(name: String, _: Token<'a>) -> Expr {
-    GetLocalExpr(name)
+fn mk_get_local_expr<'a>(name: Option<String>, position: usize, _: Token<'a>) -> Expr {
+    // TODO: make position optional, by passing in a symbol table
+    GetLocalExpr(VarUse{ name: name, position: position })
 }
 
 fn mk_expected_expr_err<'a>(_: Option<Token<'a>>) -> Result<Expr, ParseError> { 
@@ -185,11 +201,11 @@ fn mk_export<'a>(name: String, func: String, _: Token<'a>) -> Export {
     Export { name: name, func: func }
 }
 
-fn mk_function<'a>(name: String, params: Vec<Var>, result: Option<Typ>, locals: Vec<Var>, body: Vec<Expr>, _: Token<'a>) -> Function {
+fn mk_function<'a>(name: String, params: Vec<VarDec>, result: Option<Typ>, locals: Vec<VarDec>, body: Vec<Expr>, _: Token<'a>) -> Function {
     Function { name: name, params: params, result: result, locals: locals, body: body }
 }
 
-fn mk_import<'a>(func: String, module: String, name: String, params: Vec<Var>, result: Option<Typ>, _: Token<'a>) -> Import {
+fn mk_import<'a>(func: String, module: String, name: String, params: Vec<VarDec>, result: Option<Typ>, _: Token<'a>) -> Import {
     Import { func: func, module: module, name: name, params: params, result: result }
 }
 
@@ -209,8 +225,8 @@ fn mk_type<'a>(typ: Typ, _: Token<'a>) -> Typ {
     typ
 }
 
-fn mk_var<'a>(name: String, typ: Typ, _: Token<'a>) -> Var {
-    Var { name: name, typ: typ }
+fn mk_var_dec<'a>(name: Option<String>, typ: Typ, _: Token<'a>) -> VarDec {
+    VarDec { name: name, typ: typ }
 }
 
 fn mk_ok_vec<T>() -> Result<Vec<T>, ParseError> {
@@ -341,9 +357,10 @@ impl<'a> Uncommitted<Token<'a>, Tokens<'a>, WasmParserOutput<Expr>> for EXPR {
             .try_map3(mk_const_expr);
 
         let GET_LOCAL_EXPR = character_ref(is_begin_get_local_expr)
-            .discard_and_then(CHARACTER.map(must_be_identifier))
+            .discard_and_then(character_map_ref(is_identifier).opt())
+            .and_then_try(CHARACTER.map(must_be_number))
             .try_and_then_try(CHARACTER.map(must_be_end))
-            .try_map2(mk_get_local_expr);
+            .try_map3(mk_get_local_expr);
         
         BIN_OP_EXPR
             .or_else(CONST_EXPR)
@@ -353,607 +370,6 @@ impl<'a> Uncommitted<Token<'a>, Tokens<'a>, WasmParserOutput<Expr>> for EXPR {
 
     }
 
-}
-
-#[test]
-fn test_expr_parser() {
-    use std::borrow::Cow::Borrowed;
-    fn check<'a>(input: &'a mut Vec<Token<'a>>, output: Expr) {
-        use parsell::ParseResult::Done;
-        let mut iter: Tokens<'a> = input.drain(..).peekable();
-        let result = EXPR.init(&mut iter);
-        if iter.peek().is_some() {
-            println!("Unmatched input:");
-            for tok in iter { println!("{:?}", tok); }
-            panic!("Result: {:?}.", result);
-        }
-        assert_eq!(result, Some(Done(Ok(output))));
-    }
-    check(&mut vec![
-        Begin(Borrowed("f32.add")),
-            Begin(Borrowed("f32.const")),
-                Number(5),
-            End, 
-            Begin(Borrowed("f32.const")),
-                Number(37),
-            End,
-        End,
-    ], BinOpExpr(
-        F32,
-        Add,
-        Box::new(ConstExpr(
-            F32,
-            5
-        )),
-        Box::new(ConstExpr(
-            F32,
-            37
-        )),
-    ));
-    check(&mut vec![
-        Begin(Borrowed("f64.add")),
-            Begin(Borrowed("f64.const")),
-                Number(5),
-            End, 
-            Begin(Borrowed("f64.const")),
-                Number(37),
-            End,
-        End,
-    ], BinOpExpr(
-        F64,
-        Add,
-        Box::new(ConstExpr(
-            F64,
-            5
-        )),
-        Box::new(ConstExpr(
-            F64,
-            37
-        )),
-    ));
-    check(&mut vec![
-        Begin(Borrowed("i32.add")),
-            Begin(Borrowed("i32.const")),
-                Number(5),
-            End, 
-            Begin(Borrowed("i32.const")),
-                Number(37),
-            End,
-        End,
-    ], BinOpExpr(
-        I32,
-        Add,
-        Box::new(ConstExpr(
-            I32,
-            5
-        )),
-        Box::new(ConstExpr(
-            I32,
-            37
-        )),
-    ));
-    check(&mut vec![
-        Begin(Borrowed("i64.add")),
-            Begin(Borrowed("i64.const")),
-                Number(5),
-            End, 
-            Begin(Borrowed("i64.const")),
-                Number(37),
-            End,
-        End,
-    ], BinOpExpr(
-        I64,
-        Add,
-        Box::new(ConstExpr(
-            I64,
-            5
-        )),
-        Box::new(ConstExpr(
-            I64,
-            37
-        )),
-    ));
-    check(&mut vec![
-        Begin(Borrowed("i64.and")),
-            Begin(Borrowed("i64.const")),
-                Number(5),
-            End, 
-            Begin(Borrowed("i64.const")),
-                Number(37),
-            End,
-        End,
-    ], BinOpExpr(
-        I64,
-        And,
-        Box::new(ConstExpr(
-            I64,
-            5
-        )),
-        Box::new(ConstExpr(
-            I64,
-            37
-        )),
-    ));
-    check(&mut vec![
-        Begin(Borrowed("i64.div_s")),
-            Begin(Borrowed("i64.const")),
-                Number(5),
-            End, 
-            Begin(Borrowed("i64.const")),
-                Number(37),
-            End,
-        End,
-    ], BinOpExpr(
-        I64,
-        DivS,
-        Box::new(ConstExpr(
-            I64,
-            5
-        )),
-        Box::new(ConstExpr(
-            I64,
-            37
-        )),
-    ));
-    check(&mut vec![
-        Begin(Borrowed("i64.div_u")),
-            Begin(Borrowed("i64.const")),
-                Number(5),
-            End, 
-            Begin(Borrowed("i64.const")),
-                Number(37),
-            End,
-        End,
-    ], BinOpExpr(
-        I64,
-        DivU,
-        Box::new(ConstExpr(
-            I64,
-            5
-        )),
-        Box::new(ConstExpr(
-            I64,
-            37
-        )),
-    ));
-    check(&mut vec![
-        Begin(Borrowed("i64.eq")),
-            Begin(Borrowed("i64.const")),
-                Number(5),
-            End, 
-            Begin(Borrowed("i64.const")),
-                Number(37),
-            End,
-        End,
-    ], BinOpExpr(
-        I64,
-        Eq,
-        Box::new(ConstExpr(
-            I64,
-            5
-        )),
-        Box::new(ConstExpr(
-            I64,
-            37
-        )),
-    ));
-    check(&mut vec![
-        Begin(Borrowed("i64.ge_s")),
-            Begin(Borrowed("i64.const")),
-                Number(5),
-            End, 
-            Begin(Borrowed("i64.const")),
-                Number(37),
-            End,
-        End,
-    ], BinOpExpr(
-        I64,
-        GeS,
-        Box::new(ConstExpr(
-            I64,
-            5
-        )),
-        Box::new(ConstExpr(
-            I64,
-            37
-        )),
-    ));
-    check(&mut vec![
-        Begin(Borrowed("i64.ge_u")),
-            Begin(Borrowed("i64.const")),
-                Number(5),
-            End, 
-            Begin(Borrowed("i64.const")),
-                Number(37),
-            End,
-        End,
-    ], BinOpExpr(
-        I64,
-        GeU,
-        Box::new(ConstExpr(
-            I64,
-            5
-        )),
-        Box::new(ConstExpr(
-            I64,
-            37
-        )),
-    ));
-    check(&mut vec![
-        Begin(Borrowed("i64.gt_s")),
-            Begin(Borrowed("i64.const")),
-                Number(5),
-            End, 
-            Begin(Borrowed("i64.const")),
-                Number(37),
-            End,
-        End,
-    ], BinOpExpr(
-        I64,
-        GtS,
-        Box::new(ConstExpr(
-            I64,
-            5
-        )),
-        Box::new(ConstExpr(
-            I64,
-            37
-        )),
-    ));
-    check(&mut vec![
-        Begin(Borrowed("i64.gt_u")),
-            Begin(Borrowed("i64.const")),
-                Number(5),
-            End, 
-            Begin(Borrowed("i64.const")),
-                Number(37),
-            End,
-        End,
-    ], BinOpExpr(
-        I64,
-        GtU,
-        Box::new(ConstExpr(
-            I64,
-            5
-        )),
-        Box::new(ConstExpr(
-            I64,
-            37
-        )),
-    ));
-    check(&mut vec![
-        Begin(Borrowed("i64.le_s")),
-            Begin(Borrowed("i64.const")),
-                Number(5),
-            End, 
-            Begin(Borrowed("i64.const")),
-                Number(37),
-            End,
-        End,
-    ], BinOpExpr(
-        I64,
-        LeS,
-        Box::new(ConstExpr(
-            I64,
-            5
-        )),
-        Box::new(ConstExpr(
-            I64,
-            37
-        )),
-    ));
-    check(&mut vec![
-        Begin(Borrowed("i64.le_u")),
-            Begin(Borrowed("i64.const")),
-                Number(5),
-            End, 
-            Begin(Borrowed("i64.const")),
-                Number(37),
-            End,
-        End,
-    ], BinOpExpr(
-        I64,
-        LeU,
-        Box::new(ConstExpr(
-            I64,
-            5
-        )),
-        Box::new(ConstExpr(
-            I64,
-            37
-        )),
-    ));
-    check(&mut vec![
-        Begin(Borrowed("i64.lt_s")),
-            Begin(Borrowed("i64.const")),
-                Number(5),
-            End, 
-            Begin(Borrowed("i64.const")),
-                Number(37),
-            End,
-        End,
-    ], BinOpExpr(
-        I64,
-        LtS,
-        Box::new(ConstExpr(
-            I64,
-            5
-        )),
-        Box::new(ConstExpr(
-            I64,
-            37
-        )),
-    ));
-    check(&mut vec![
-        Begin(Borrowed("i64.lt_u")),
-            Begin(Borrowed("i64.const")),
-                Number(5),
-            End, 
-            Begin(Borrowed("i64.const")),
-                Number(37),
-            End,
-        End,
-    ], BinOpExpr(
-        I64,
-        LtU,
-        Box::new(ConstExpr(
-            I64,
-            5
-        )),
-        Box::new(ConstExpr(
-            I64,
-            37
-        )),
-    ));
-    check(&mut vec![
-        Begin(Borrowed("i64.mul")),
-            Begin(Borrowed("i64.const")),
-                Number(5),
-            End, 
-            Begin(Borrowed("i64.const")),
-                Number(37),
-            End,
-        End,
-    ], BinOpExpr(
-        I64,
-        Mul,
-        Box::new(ConstExpr(
-            I64,
-            5
-        )),
-        Box::new(ConstExpr(
-            I64,
-            37
-        )),
-    ));
-    check(&mut vec![
-        Begin(Borrowed("i64.ne")),
-            Begin(Borrowed("i64.const")),
-                Number(5),
-            End, 
-            Begin(Borrowed("i64.const")),
-                Number(37),
-            End,
-        End,
-    ], BinOpExpr(
-        I64,
-        Ne,
-        Box::new(ConstExpr(
-            I64,
-            5
-        )),
-        Box::new(ConstExpr(
-            I64,
-            37
-        )),
-    ));
-    check(&mut vec![
-        Begin(Borrowed("i64.or")),
-            Begin(Borrowed("i64.const")),
-                Number(5),
-            End, 
-            Begin(Borrowed("i64.const")),
-                Number(37),
-            End,
-        End,
-    ], BinOpExpr(
-        I64,
-        Or,
-        Box::new(ConstExpr(
-            I64,
-            5
-        )),
-        Box::new(ConstExpr(
-            I64,
-            37
-        )),
-    ));
-    check(&mut vec![
-        Begin(Borrowed("i64.rem_s")),
-            Begin(Borrowed("i64.const")),
-                Number(5),
-            End, 
-            Begin(Borrowed("i64.const")),
-                Number(37),
-            End,
-        End,
-    ], BinOpExpr(
-        I64,
-        RemS,
-        Box::new(ConstExpr(
-            I64,
-            5
-        )),
-        Box::new(ConstExpr(
-            I64,
-            37
-        )),
-    ));
-    check(&mut vec![
-        Begin(Borrowed("i64.rem_u")),
-            Begin(Borrowed("i64.const")),
-                Number(5),
-            End, 
-            Begin(Borrowed("i64.const")),
-                Number(37),
-            End,
-        End,
-    ], BinOpExpr(
-        I64,
-        RemU,
-        Box::new(ConstExpr(
-            I64,
-            5
-        )),
-        Box::new(ConstExpr(
-            I64,
-            37
-        )),
-    ));
-    check(&mut vec![
-        Begin(Borrowed("i64.shl")),
-            Begin(Borrowed("i64.const")),
-                Number(5),
-            End, 
-            Begin(Borrowed("i64.const")),
-                Number(37),
-            End,
-        End,
-    ], BinOpExpr(
-        I64,
-        Shl,
-        Box::new(ConstExpr(
-            I64,
-            5
-        )),
-        Box::new(ConstExpr(
-            I64,
-            37
-        )),
-    ));    
-    check(&mut vec![
-        Begin(Borrowed("i64.shr_s")),
-            Begin(Borrowed("i64.const")),
-                Number(5),
-            End, 
-            Begin(Borrowed("i64.const")),
-                Number(37),
-            End,
-        End,
-    ], BinOpExpr(
-        I64,
-        ShrS,
-        Box::new(ConstExpr(
-            I64,
-            5
-        )),
-        Box::new(ConstExpr(
-            I64,
-            37
-        )),
-    ));
-    check(&mut vec![
-        Begin(Borrowed("i64.shr_u")),
-            Begin(Borrowed("i64.const")),
-                Number(5),
-            End, 
-            Begin(Borrowed("i64.const")),
-                Number(37),
-            End,
-        End,
-    ], BinOpExpr(
-        I64,
-        ShrU,
-        Box::new(ConstExpr(
-            I64,
-            5
-        )),
-        Box::new(ConstExpr(
-            I64,
-            37
-        )),
-    ));
-    check(&mut vec![
-        Begin(Borrowed("i64.sub")),
-            Begin(Borrowed("i64.const")),
-                Number(5),
-            End, 
-            Begin(Borrowed("i64.const")),
-                Number(37),
-            End,
-        End,
-    ], BinOpExpr(
-        I64,
-        Sub,
-        Box::new(ConstExpr(
-            I64,
-            5
-        )),
-        Box::new(ConstExpr(
-            I64,
-            37
-        )),
-    ));
-    check(&mut vec![
-        Begin(Borrowed("i64.xor")),
-            Begin(Borrowed("i64.const")),
-                Number(5),
-            End, 
-            Begin(Borrowed("i64.const")),
-                Number(37),
-            End,
-        End,
-    ], BinOpExpr(
-        I64,
-        Xor,
-        Box::new(ConstExpr(
-            I64,
-            5
-        )),
-        Box::new(ConstExpr(
-            I64,
-            37
-        )),
-    ));
-    check(&mut vec![
-        Begin(Borrowed("f32.const")),
-            Number(37),
-        End,
-    ], ConstExpr(
-        F32,
-        37
-    ));
-    check(&mut vec![
-        Begin(Borrowed("f64.const")),
-            Number(37),
-        End,
-    ], ConstExpr(
-        F64,
-        37
-    ));
-    check(&mut vec![
-        Begin(Borrowed("i32.const")),
-            Number(37),
-        End,
-    ], ConstExpr(
-        I32,
-        37
-    ));
-    check(&mut vec![
-        Begin(Borrowed("i64.const")),
-            Number(37),
-        End,
-    ], ConstExpr(
-        I64,
-        37
-    ));
-    check(&mut vec![
-        Begin(Borrowed("get_local")),
-            Identifier(Borrowed("$x")),
-        End,
-    ], GetLocalExpr(
-        String::from("$x")
-    ));
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, Hash, Ord, PartialOrd, Debug)]
@@ -1073,21 +489,21 @@ pub struct LOCAL;
 impl Parser for LOCAL {}
 impl<'a> HasOutput<Token<'a>, Tokens<'a>> for LOCAL {
 
-    type Output = WasmParserOutput<Var>;
+    type Output = WasmParserOutput<VarDec>;
 
 }
-impl<'a> Uncommitted<Token<'a>, Tokens<'a>, WasmParserOutput<Var>> for LOCAL {
+impl<'a> Uncommitted<Token<'a>, Tokens<'a>, WasmParserOutput<VarDec>> for LOCAL {
 
-    type State = WasmParserState<Var>;
+    type State = WasmParserState<VarDec>;
 
     #[allow(non_snake_case)]
-    fn init(&self, data: &mut Tokens<'a>) -> Option<ParseResult<WasmParserState<Var>, WasmParserOutput<Var>>> {
+    fn init(&self, data: &mut Tokens<'a>) -> Option<ParseResult<WasmParserState<VarDec>, WasmParserOutput<VarDec>>> {
 
         character_ref(is_begin_local)
-            .discard_and_then(CHARACTER.map(must_be_identifier))
-            .try_and_then_try(CHARACTER.map(must_be_type))
+            .discard_and_then(character_map_ref(is_identifier).opt())
+            .and_then_try(CHARACTER.map(must_be_type))
             .try_and_then_try(CHARACTER.map(must_be_end))
-            .try_map3(mk_var)
+            .try_map3(mk_var_dec)
             .boxed(mk_parser_state)
             .init(data)
 
@@ -1100,21 +516,21 @@ pub struct PARAM;
 impl Parser for PARAM {}
 impl<'a> HasOutput<Token<'a>, Tokens<'a>> for PARAM {
 
-    type Output = WasmParserOutput<Var>;
+    type Output = WasmParserOutput<VarDec>;
 
 }
-impl<'a> Uncommitted<Token<'a>, Tokens<'a>, WasmParserOutput<Var>> for PARAM {
+impl<'a> Uncommitted<Token<'a>, Tokens<'a>, WasmParserOutput<VarDec>> for PARAM {
 
-    type State = WasmParserState<Var>;
+    type State = WasmParserState<VarDec>;
 
     #[allow(non_snake_case)]
-    fn init(&self, data: &mut Tokens<'a>) -> Option<ParseResult<WasmParserState<Var>, WasmParserOutput<Var>>> {
+    fn init(&self, data: &mut Tokens<'a>) -> Option<ParseResult<WasmParserState<VarDec>, WasmParserOutput<VarDec>>> {
 
         character_ref(is_begin_param)
-            .discard_and_then(CHARACTER.map(must_be_identifier))
-            .try_and_then_try(CHARACTER.map(must_be_type))
+            .discard_and_then(character_map_ref(is_identifier).opt())
+            .and_then_try(CHARACTER.map(must_be_type))
             .try_and_then_try(CHARACTER.map(must_be_end))
-            .try_map3(mk_var)
+            .try_map3(mk_var_dec)
             .boxed(mk_parser_state)
             .init(data)
 
@@ -1228,102 +644,4 @@ impl<'a> Uncommitted<Token<'a>, Tokens<'a>, WasmParserOutput<Module>> for MODULE
 
     }
 
-}
-
-#[test]
-fn test_module_parser() {
-    use std::borrow::Cow::Borrowed;
-    let mut input = vec![
-        Begin(Borrowed("module")),
-            Begin(Borrowed("memory")),
-                Number(0),
-                Begin(Borrowed("segment")),
-                    Number(37),
-                    Text(String::from("abc")),
-                End,
-            End,
-            Begin(Borrowed("import")),
-                Identifier(Borrowed("$foo")),
-                Text(String::from("bar")),
-                Text(String::from("baz")),
-                Begin(Borrowed("param")),
-                    Identifier(Borrowed("$x")),
-                    Type(I32),
-                End,
-                Begin(Borrowed("result")),
-                    Type(I64),
-                End,
-            End,
-            Begin(Borrowed("export")),
-                Text(String::from("bar")),
-                Identifier(Borrowed("$foo")),
-            End,
-            Begin(Borrowed("func")),
-                Identifier(Borrowed("$foo")),
-                Begin(Borrowed("param")),
-                    Identifier(Borrowed("$x")),
-                    Type(I32),
-                End,
-                Begin(Borrowed("result")),
-                    Type(I64),
-                End,
-                Begin(Borrowed("local")),
-                    Identifier(Borrowed("$y")),
-                    Type(I32),
-                End,
-                Begin(Borrowed("i64.const")),
-                    Number(37),
-                End,
-            End,
-        End,
-    ];
-    let output = Module {
-        memory: Some(Memory {
-            init: 0,
-            max: None,
-            segments: vec![
-                Segment {
-                    addr: 37,
-                    data: String::from("abc")
-                },
-            ],
-        }),
-        imports: vec![
-            Import {
-                func: String::from("$foo"),
-                module: String::from("bar"),
-                name: String::from("baz"),
-                params: vec![
-                    Var { name: String::from("$x"), typ: I32 },
-                ],
-                result: Some(I64),
-            },                
-        ],
-        exports: vec![
-            Export {
-                name: String::from("bar"),
-                func: String::from("$foo"),
-            },
-        ],
-        functions: vec![
-            Function {
-                name: String::from("$foo"),
-                params: vec![
-                    Var { name: String::from("$x"), typ: I32 },
-                ],
-                result: Some(I64),
-                locals: vec![
-                    Var { name: String::from("$y"), typ: I32 },
-                ],
-                body: vec![
-                    ConstExpr(I64, 37),
-                ],
-            },
-        ],
-    };
-    let mut iter = input.drain(..).peekable();
-    assert_eq!(
-        MODULE.init(&mut iter),
-        Some(Done(Ok(output)))
-    )
 }

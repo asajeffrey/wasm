@@ -198,21 +198,3 @@ impl<'a> Uncommitted<char, Chars<'a>, Result<Token<'a>, LexError>> for WasmLexer
 }
 
 pub const LEXER: WasmLexer = WasmLexer;
-
-#[test]
-#[allow(non_snake_case)]
-fn test_lexer() {
-    use parsell::UncommittedStr;
-    use parsell::ParseResult::{Done};
-    use std::borrow::Cow::{Borrowed};
-    let overflow = usize::from_str_radix("983748948934789348763894786345786", 10).unwrap_err();
-    assert_eq!(LEXER.init_str("(foo!"),Some(Done(Ok(Begin(Borrowed("foo"))))));
-    assert_eq!(LEXER.init_str(")!"),Some(Done(Ok(End))));
-    assert_eq!(LEXER.init_str("$abc!"),Some(Done(Ok(Identifier(Borrowed("$abc"))))));
-    assert_eq!(LEXER.init_str(" \t\r\n !"),Some(Done(Ok(Whitespace(Borrowed(" \t\r\n "))))));
-    assert_eq!(LEXER.init_str("\"xyz\\t\\\"abc\"!"),Some(Done(Ok(Text(String::from("xyz\t\"abc"))))));
-    assert_eq!(LEXER.init_str(" \t\r\n !"),Some(Done(Ok(Whitespace(Borrowed(" \t\r\n "))))));
-    assert_eq!(LEXER.init_str("!!"),Some(Done(Err(UnexpectedChar('!')))));
-    assert_eq!(LEXER.init_str("\"abc\r\"!"),Some(Done(Err(UnclosedString('\r')))));
-    assert_eq!(LEXER.init_str("1234567890123456789012345678901234567890!"),Some(Done(Err(UnparseableInt(overflow))))) ;
-}

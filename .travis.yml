@@ -2,4 +2,4 @@ language: rust
 rust:
   - nightly
 script:
-  - cargo test -v --manifest-path wasm/Cargo.toml
+  - cargo test -v --manifest-path wasm/Cargo.toml -p wasm_ast -p wasm_sexpr -p wasm_interpreter
