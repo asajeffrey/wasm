@@ -7,7 +7,7 @@ use wasm_ast::{BinOp, Expr};
 use wasm_ast::BinOp::{Add, And, DivS, DivU, Eq, GeS, GeU, GtS, GtU, LeS, LeU, LtS, LtU};
 use wasm_ast::BinOp::{Mul, Ne, Or, RemS, RemU, RotL, RotR, Shl, ShrS, ShrU, Sub, Xor};
 use wasm_ast::Const::{F32Const, F64Const, I32Const, I64Const};
-use wasm_ast::Expr::{BinOpExpr, ConstExpr, GetLocalExpr, LoadExpr};
+use wasm_ast::Expr::{BinOpExpr, ConstExpr, GetLocalExpr, LoadExpr, StoreExpr};
 use wasm_ast::Typ::{F32, F64, I32, I64};
 
 trait Interpreter<T> {
@@ -33,7 +33,7 @@ trait Interpreter<T> {
     fn interpret_u64(&self, _: u64) -> T;
 
     fn interpret_expr(&mut self, expr: &Expr, locals: &mut[u64], heap: &mut Vec<u8>) -> T
-        where Self: Interpreter<u32>
+        where Self: Interpreter<f32> + Interpreter<f64> + Interpreter<u32> + Interpreter<u64>
     {
         match expr {
             &BinOpExpr(_, ref op, ref lhs, ref rhs) => {
@@ -50,22 +50,46 @@ trait Interpreter<T> {
                 let addr: u32 = self.interpret_expr(addr, locals, heap);
                 let value: f32 = LittleEndian::read_f32(&heap[addr as usize..]);
                 self.interpret_f32(value)
-            }
+            },
             &LoadExpr(F64, ref addr) => {
                 let addr: u32 = self.interpret_expr(addr, locals, heap);
                 let value: f64 = LittleEndian::read_f64(&heap[addr as usize..]);
                 self.interpret_f64(value)
-            }
+            },
             &LoadExpr(I32, ref addr) => {
                 let addr: u32 = self.interpret_expr(addr, locals, heap);
                 let value: u32 = LittleEndian::read_u32(&heap[addr as usize..]);
                 self.interpret_i32(value)
-            }
+            },
             &LoadExpr(I64, ref addr) => {
                 let addr: u32 = self.interpret_expr(addr, locals, heap);
                 let value: u64 = LittleEndian::read_u64(&heap[addr as usize..]);
                 self.interpret_i64(value)
-            }
+            },
+            &StoreExpr(F32, ref addr, ref value) => {
+                let addr: u32 = self.interpret_expr(addr, locals, heap);
+                let value: f32 = self.interpret_expr(value, locals, heap);
+                LittleEndian::write_f32(&mut heap[addr as usize..], value);
+                self.interpret_f32(value)
+            },
+            &StoreExpr(F64, ref addr, ref value) => {
+                let addr: u32 = self.interpret_expr(addr, locals, heap);
+                let value: f64 = self.interpret_expr(value, locals, heap);
+                LittleEndian::write_f64(&mut heap[addr as usize..], value);
+                self.interpret_f64(value)
+            },
+            &StoreExpr(I32, ref addr, ref value) => {
+                let addr: u32 = self.interpret_expr(addr, locals, heap);
+                let value: u32 = self.interpret_expr(value, locals, heap);
+                LittleEndian::write_u32(&mut heap[addr as usize..], value);
+                self.interpret_i32(value)
+            },
+            &StoreExpr(I64, ref addr, ref value) => {
+                let addr: u32 = self.interpret_expr(addr, locals, heap);
+                let value: u64 = self.interpret_expr(value, locals, heap);
+                LittleEndian::write_u64(&mut heap[addr as usize..], value);
+                self.interpret_i64(value)
+            },
        }
     }
 

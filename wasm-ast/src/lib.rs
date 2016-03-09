@@ -28,6 +28,7 @@ pub enum Expr {
     ConstExpr(Const),
     GetLocalExpr(VarUse),
     LoadExpr(Typ, Box<Expr>),
+    StoreExpr(Typ, Box<Expr>, Box<Expr>),
 }
 
 #[derive(Clone, PartialEq, PartialOrd, Debug)]
