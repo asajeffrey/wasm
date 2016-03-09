@@ -9,7 +9,7 @@ use wasm_ast::{BinOp, Expr};
 use wasm_ast::BinOp::{Add, And, DivS, DivU, Eq, GeS, GeU, GtS, GtU, LeS, LeU, LtS, LtU};
 use wasm_ast::BinOp::{Mul, Ne, Or, RemS, RemU, RotL, RotR, Shl, ShrS, ShrU, Sub, Xor};
 use wasm_ast::Const::{F32Const, F64Const, I32Const, I64Const};
-use wasm_ast::Expr::{BinOpExpr, ConstExpr, GetLocalExpr, GrowMemoryExpr, LoadExpr, StoreExpr};
+use wasm_ast::Expr::{BinOpExpr, ConstExpr, GetLocalExpr, GrowMemoryExpr, LoadExpr, SetLocalExpr, StoreExpr};
 use wasm_ast::Typ::{F32, F64, I32, I64};
 
 trait Interpreter<T> {
@@ -32,10 +32,13 @@ trait Interpreter<T> {
         panic!("Type error.")
     }
 
-    fn interpret_u64(&self, _: u64) -> T;
+    fn from_u64(&self, _: u64) -> T;
+
+    fn to_u64(&self, _: T) -> u64;
 
     fn interpret_expr(&mut self, expr: &Expr, locals: &mut[u64], heap: &mut Vec<u8>) -> T
-        where Self: Interpreter<f32> + Interpreter<f64> + Interpreter<u32> + Interpreter<u64>
+        where Self: Interpreter<f32> + Interpreter<f64> + Interpreter<u32> + Interpreter<u64>,
+              T: Copy,
     {
         match expr {
             &BinOpExpr(_, ref op, ref lhs, ref rhs) => {
@@ -47,7 +50,7 @@ trait Interpreter<T> {
             &ConstExpr(F64Const(value)) => self.interpret_f64(value),
             &ConstExpr(I32Const(value)) => self.interpret_i32(value),
             &ConstExpr(I64Const(value)) => self.interpret_i64(value),
-            &GetLocalExpr(ref var) => self.interpret_i64(locals[var.position]),
+            &GetLocalExpr(ref var) => self.from_u64(locals[var.position]),
             &GrowMemoryExpr(ref ext) => {
                 let result: u32 = heap.len() as u32;
                 let ext: u32 = self.interpret_expr(ext, locals, heap);
@@ -73,6 +76,11 @@ trait Interpreter<T> {
                 let addr: u32 = self.interpret_expr(addr, locals, heap);
                 let value: u64 = LittleEndian::read_u64(&heap[addr as usize..]);
                 self.interpret_i64(value)
+            },
+            &SetLocalExpr(ref var, ref value) => {
+                let value: T = self.interpret_expr(value, locals, heap);
+                locals[var.position] = self.to_u64(value);
+                value
             },
             &StoreExpr(F32, ref addr, ref value) => {
                 let addr: u32 = self.interpret_expr(addr, locals, heap);
@@ -141,8 +149,12 @@ impl Interpreter<u32> for Program {
         value
     }
 
-    fn interpret_u64(&self, value: u64) -> u32 {
+    fn from_u64(&self, value: u64) -> u32 {
         value as u32
+    }
+
+    fn to_u64(&self, value: u32) -> u64 {
+        value as u64
     }
 
 }
