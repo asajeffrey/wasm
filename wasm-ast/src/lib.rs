@@ -27,6 +27,7 @@ pub enum Expr {
     BinOpExpr(Typ, BinOp, Box<Expr>, Box<Expr>),
     ConstExpr(Const),
     GetLocalExpr(VarUse),
+    LoadExpr(Typ, Box<Expr>),
 }
 
 #[derive(Clone, PartialEq, PartialOrd, Debug)]
