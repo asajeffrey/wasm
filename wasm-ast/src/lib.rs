@@ -36,10 +36,10 @@ pub enum Expr {
     GrowMemoryExpr(Box<Expr>),
     IfThenExpr(Box<Expr>, Box<Expr>),
     IfThenElseExpr(Box<Expr>, Box<Expr>, Box<Expr>),
-    LoadExpr(Typ, Box<Expr>),
+    LoadExpr(Typ, Size, Box<Expr>),
     NopExpr,
     SetLocalExpr(VarUse, Box<Expr>),
-    StoreExpr(Typ, Box<Expr>, Box<Expr>),
+    StoreExpr(Typ, Size, Box<Expr>, Box<Expr>),
     UnaryOpExpr(Typ, UnaryOp, Box<Expr>),
 }
 
@@ -89,6 +89,14 @@ pub enum Typ {
     I64,
     F32,
     F64,
+}
+
+#[derive(Clone, Eq, PartialEq, Hash, Ord, PartialOrd, Debug)]
+pub enum Size {
+    Bits8,
+    Bits16,
+    Bits32,
+    Bits64,
 }
 
 #[derive(Clone, Eq, PartialEq, Hash, Ord, PartialOrd, Debug)]

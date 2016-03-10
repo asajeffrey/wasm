@@ -5,22 +5,22 @@ use byteorder::{ByteOrder, LittleEndian};
 
 use std::iter::repeat;
 use std::default::Default;
-use std::mem;
 
-use wasm_ast::{BinOp, Expr, UnaryOp};
+use wasm_ast::{BinOp, Expr, Size, UnaryOp};
 use wasm_ast::BinOp::{Add, And, Copysign, DivF, DivS, DivU, Eq, GeF, GeS, GeU, GtF, GtS};
 use wasm_ast::BinOp::{GtU, LeF, LeS, LeU, LtF, LtS, LtU, Max, Min, Mul, Ne, Or, RemS};
 use wasm_ast::BinOp::{RemU, RotL, RotR, Shl, ShrS, ShrU, Sub, Xor};
 use wasm_ast::Const::{F32Const, F64Const, I32Const, I64Const};
 use wasm_ast::Expr::{BinOpExpr, ConstExpr, GetLocalExpr, GrowMemoryExpr, IfThenExpr, IfThenElseExpr, LoadExpr, NopExpr, SetLocalExpr, StoreExpr, UnaryOpExpr};
+use wasm_ast::Size::{Bits8, Bits16, Bits32, Bits64};
 use wasm_ast::Typ::{F32, F64, I32, I64};
 use wasm_ast::UnaryOp::{Abs, Ceil, Clz, Ctz, Eqz, Floor, Nearest, Neg, Popcnt, Sqrt, Trunc};
 
 trait Interpreter<T> {
 
-    fn from_raw(&self, _: u64) -> T;
+    fn get_raw(&self, _: &Size, _: &[u8]) -> T;
 
-    fn to_raw(&self, _: T) -> u64;
+    fn set_raw(&self, _: &Size, _: &mut[u8], _: T);
 
     fn type_error(&self) -> T {
         panic!("Type error.")
@@ -74,7 +74,7 @@ trait Interpreter<T> {
         self.type_error()
     }
 
-    fn interpret_expr(&mut self, expr: &Expr, locals: &mut[u64], heap: &mut Vec<u8>) -> T
+    fn interpret_expr(&mut self, expr: &Expr, locals: &mut[[u8;8]], heap: &mut Vec<u8>) -> T
         where Self: Interpreter<f32> + Interpreter<f64> + Interpreter<u32> + Interpreter<u64>,
               T: Copy + Default,
     {
@@ -106,7 +106,7 @@ trait Interpreter<T> {
             &ConstExpr(F64Const(value)) => self.from_f64(value),
             &ConstExpr(I32Const(value)) => self.from_i32(value),
             &ConstExpr(I64Const(value)) => self.from_i64(value),
-            &GetLocalExpr(ref var) => self.from_raw(locals[var.position]),
+            &GetLocalExpr(ref var) => self.get_raw(&Bits64, &locals[var.position]),
             &GrowMemoryExpr(ref ext) => {
                 let result: u32 = heap.len() as u32;
                 let ext: u32 = self.interpret_expr(ext, locals, heap);
@@ -129,55 +129,21 @@ trait Interpreter<T> {
                     self.interpret_expr(true_branch, locals, heap)
                 }
             },
-            &LoadExpr(F32, ref addr) => {
+            &LoadExpr(_, ref size, ref addr) => {
                 let addr: u32 = self.interpret_expr(addr, locals, heap);
-                let value: f32 = LittleEndian::read_f32(&heap[addr as usize..]);
-                self.from_f32(value)
-            },
-            &LoadExpr(F64, ref addr) => {
-                let addr: u32 = self.interpret_expr(addr, locals, heap);
-                let value: f64 = LittleEndian::read_f64(&heap[addr as usize..]);
-                self.from_f64(value)
-            },
-            &LoadExpr(I32, ref addr) => {
-                let addr: u32 = self.interpret_expr(addr, locals, heap);
-                let value: u32 = LittleEndian::read_u32(&heap[addr as usize..]);
-                self.from_i32(value)
-            },
-            &LoadExpr(I64, ref addr) => {
-                let addr: u32 = self.interpret_expr(addr, locals, heap);
-                let value: u64 = LittleEndian::read_u64(&heap[addr as usize..]);
-                self.from_i64(value)
+                self.get_raw(size, &heap[addr as usize..])
             },
             &NopExpr => T::default(),
             &SetLocalExpr(ref var, ref value) => {
                 let value: T = self.interpret_expr(value, locals, heap);
-                locals[var.position] = self.to_raw(value);
+                self.set_raw(&Bits64, &mut locals[var.position], value);
                 value
             },
-            &StoreExpr(F32, ref addr, ref value) => {
+            &StoreExpr(_, ref size, ref addr, ref value) => {
                 let addr: u32 = self.interpret_expr(addr, locals, heap);
-                let value: f32 = self.interpret_expr(value, locals, heap);
-                LittleEndian::write_f32(&mut heap[addr as usize..], value);
-                self.from_f32(value)
-            },
-            &StoreExpr(F64, ref addr, ref value) => {
-                let addr: u32 = self.interpret_expr(addr, locals, heap);
-                let value: f64 = self.interpret_expr(value, locals, heap);
-                LittleEndian::write_f64(&mut heap[addr as usize..], value);
-                self.from_f64(value)
-            },
-            &StoreExpr(I32, ref addr, ref value) => {
-                let addr: u32 = self.interpret_expr(addr, locals, heap);
-                let value: u32 = self.interpret_expr(value, locals, heap);
-                LittleEndian::write_u32(&mut heap[addr as usize..], value);
-                self.from_i32(value)
-            },
-            &StoreExpr(I64, ref addr, ref value) => {
-                let addr: u32 = self.interpret_expr(addr, locals, heap);
-                let value: u64 = self.interpret_expr(value, locals, heap);
-                LittleEndian::write_u64(&mut heap[addr as usize..], value);
-                self.from_i64(value)
+                let value: T = self.interpret_expr(value, locals, heap);
+                self.set_raw(size, &mut heap[addr as usize..], value);
+                value
             },
             &UnaryOpExpr(F32, ref op, ref arg) => {
                 let arg: f32 = self.interpret_expr(arg, locals, heap);
@@ -201,6 +167,19 @@ trait Interpreter<T> {
 }
 
 pub struct Program;
+
+
+impl Interpreter<()> for Program {
+
+    fn get_raw(&self, _: &Size, _: &[u8]) -> () {
+        self.type_error()
+    }
+
+    fn set_raw(&self, _: &Size, _: &mut [u8], _: ()) {
+        self.type_error()
+    }
+
+}
 
 impl Interpreter<u32> for Program {
 
@@ -261,12 +240,22 @@ impl Interpreter<u32> for Program {
         value
     }
 
-    fn from_raw(&self, value: u64) -> u32 {
-        value as u32
+    fn get_raw(&self, size: &Size, bytes: &[u8]) -> u32 {
+        match size {
+            &Bits64 => LittleEndian::read_u32(&bytes[4..]),
+            &Bits32 => LittleEndian::read_u32(bytes),
+            &Bits16 => LittleEndian::read_u16(bytes) as u32,
+            &Bits8  => bytes[0] as u32,
+        }
     }
 
-    fn to_raw(&self, value: u32) -> u64 {
-        value as u64
+    fn set_raw(&self, size: &Size, bytes: &mut [u8], value: u32) {
+        match size {
+            &Bits64 => LittleEndian::write_u32(&mut bytes[4..], value),
+            &Bits32 => LittleEndian::write_u32(bytes, value),
+            &Bits16 => LittleEndian::write_u16(bytes, value as u16),
+            &Bits8 => bytes[0] = value as u8,
+        }
     }
 
 }
@@ -303,13 +292,20 @@ impl Interpreter<f32> for Program {
         value
     }
 
-    fn from_raw(&self, value: u64) -> f32 {
-        unsafe { mem::transmute(value as u32) }
+    fn get_raw(&self, size: &Size, bytes: &[u8]) -> f32 {
+        match size {
+            &Bits64 => LittleEndian::read_f32(&bytes[4..]),
+            &Bits32 => LittleEndian::read_f32(bytes),
+            _ => self.type_error(),
+        }
     }
 
-    fn to_raw(&self, value: f32) -> u64 {
-        let result: u32 = unsafe { mem::transmute(value) };
-        result as u64
+    fn set_raw(&self, size: &Size, bytes: &mut [u8], value: f32) {
+        match size {
+            &Bits64 => LittleEndian::write_f32(&mut bytes[4..], value),
+            &Bits32 => LittleEndian::write_f32(bytes, value),
+            _ => self.type_error(),
+        }
     }
 
 }
