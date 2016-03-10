@@ -29,6 +29,7 @@ pub enum Expr {
     GetLocalExpr(VarUse),
     GrowMemoryExpr(Box<Expr>),
     IfThenExpr(Box<Expr>, Box<Expr>),
+    IfThenElseExpr(Box<Expr>, Box<Expr>, Box<Expr>),
     LoadExpr(Typ, Box<Expr>),
     NopExpr,
     SetLocalExpr(VarUse, Box<Expr>),
