@@ -4,12 +4,14 @@ use self::Declaration::{ImportDec, ExportDec, FunctionDec};
 use lexer::{Token, LexError};
 use lexer::Token::{Begin, End, Identifier, Number, Text, Type};
 
-use wasm_ast::{BinOp, Expr, Export, Function, Import, Memory, Module, Segment, Typ, VarDec, VarUse};
-use wasm_ast::BinOp::{Add, And, DivS, DivU, Eq, GeS, GeU, GtS, GtU, LeS, LeU, LtS, LtU};
-use wasm_ast::BinOp::{Mul, Ne, Or, RemS, RemU, Shl, ShrS, ShrU, Sub, Xor};
+use wasm_ast::{BinOp, Expr, Export, Function, Import, Memory, Module, Segment, SignedTyp, Typ, UnaryOp, VarDec, VarUse};
+use wasm_ast::BinOp::{Add, And, Copysign, Div, Eq, Ge, Gt, Le, Lt, Max, Min, Mul, Ne};
+use wasm_ast::BinOp::{Or, Rem, RotL, RotR, Shl, Shr, Sub, Xor};
 use wasm_ast::Const::{F32Const, F64Const, I32Const, I64Const};
 use wasm_ast::Expr::{BinOpExpr, ConstExpr, GetLocalExpr};
+use wasm_ast::SignedTyp::{F32s, F64s, I32s, I64s, U32s, U64s};
 use wasm_ast::Typ::{F32, F64, I32, I64};
+use wasm_ast::UnaryOp::{Abs, Ceil, Clz, Ctz, Eqz, Floor, Nearest, Neg, Popcnt, Sqrt, Trunc};
 
 use parsell::{StaticMarker, Consumer};
 use parsell::{Parser, Uncommitted, Boxable, ParseResult, HasOutput, Stateful};
@@ -46,8 +48,7 @@ fn is_begin_export<'a>(tok: &Token<'a>) -> bool {
 }
 
 fn is_begin_function<'a>(tok: &Token<'a>) -> bool {
-    match *tok {
-        Begin(ref kw) => (kw == "func"),
+    match *tok {        Begin(ref kw) => (kw == "func"),
         _ => false,
     }
 }
@@ -129,40 +130,126 @@ fn is_begin_const_expr<'a>(tok: &Token<'a>) -> Option<Typ> {
     }
 }
 
-fn is_begin_bin_op_expr<'a>(tok: &Token<'a>) -> Option<(Typ, BinOp)> {
+fn is_begin_bin_op_expr<'a>(tok: &Token<'a>) -> Option<(SignedTyp, BinOp)> {
     match *tok {
-        Begin(ref kw) => match &kw[0..4] {
-            "i32." => Some(I32),
-            "i64." => Some(I64),
-            "f32." => Some(F32),
-            "f64." => Some(F64),
+        Begin(ref kw) => match &**kw {
+
+            "f32.add" => Some((F32s, Add)),
+            "f32.copysign" => Some((F32s, Copysign)),
+            "f32.div" => Some((F32s, Div)),
+            "f32.eq" => Some((F32s, Eq)),
+            "f32.ge" => Some((F32s, Ge)),
+            "f32.gt" => Some((F32s, Gt)),
+            "f32.le" => Some((F32s, Le)),
+            "f32.lt" => Some((F32s, Lt)),
+            "f32.max" => Some((F32s, Max)),
+            "f32.min" => Some((F32s, Min)),
+            "f32.mul" => Some((F32s, Mul)),
+            "f32.ne" => Some((F32s, Ne)),
+            "f32.sub" => Some((F32s, Sub)),
+
+            "f64.add" => Some((F64s, Add)),
+            "f64.copysign" => Some((F64s, Copysign)),
+            "f64.div" => Some((F64s, Div)),
+            "f64.eq" => Some((F64s, Eq)),
+            "f64.ge" => Some((F64s, Ge)),
+            "f64.gt" => Some((F64s, Gt)),
+            "f64.le" => Some((F64s, Le)),
+            "f64.lt" => Some((F64s, Lt)),
+            "f64.max" => Some((F64s, Max)),
+            "f64.min" => Some((F64s, Min)),
+            "f64.mul" => Some((F64s, Mul)),
+            "f64.ne" => Some((F64s, Ne)),
+            "f64.sub" => Some((F64s, Sub)),
+
+            "i32.add" => Some((U32s, Add)),
+            "i32.and" => Some((U32s, And)),
+            "i32.div_s" => Some((I32s, Div)),
+            "i32.div_u" => Some((U32s, Div)),
+            "i32.eq" => Some((U32s, Eq)),
+            "i32.ge_s" => Some((I32s, Ge)),
+            "i32.ge_u" => Some((U32s, Ge)),
+            "i32.gt_s" => Some((I32s, Gt)),
+            "i32.gt_u" => Some((U32s, Gt)),
+            "i32.le_s" => Some((I32s, Le)),
+            "i32.le_u" => Some((U32s, Le)),
+            "i32.lt_s" => Some((I32s, Lt)),
+            "i32.lt_u" => Some((U32s, Lt)),
+            "i32.mul" => Some((U32s, Mul)),
+            "i32.ne" => Some((U32s, Ne)),
+            "i32.or" => Some((U32s, Or)),
+            "i32.rem_s" => Some((I32s, Rem)),
+            "i32.rem_u" => Some((U32s, Rem)),
+            "i32.shl" => Some((U32s, Shl)),
+            "i32.shr_s" => Some((I32s, Shr)),
+            "i32.shr_u" => Some((U32s, Shr)),
+            "i32.sub" => Some((U32s, Sub)),
+            "i32.xor" => Some((U32s, Xor)),
+
+            "i64.add" => Some((U64s, Add)),
+            "i64.and" => Some((U64s, And)),
+            "i64.div_s" => Some((I64s, Div)),
+            "i64.div_u" => Some((U64s, Div)),
+            "i64.eq" => Some((U64s, Eq)),
+            "i64.ge_s" => Some((I64s, Ge)),
+            "i64.ge_u" => Some((U64s, Ge)),
+            "i64.gt_s" => Some((I64s, Gt)),
+            "i64.gt_u" => Some((U64s, Gt)),
+            "i64.le_s" => Some((I64s, Le)),
+            "i64.le_u" => Some((U64s, Le)),
+            "i64.lt_s" => Some((I64s, Lt)),
+            "i64.lt_u" => Some((U64s, Lt)),
+            "i64.mul" => Some((U64s, Mul)),
+            "i64.ne" => Some((U64s, Ne)),
+            "i64.or" => Some((U64s, Or)),
+            "i64.rem_s" => Some((I64s, Rem)),
+            "i64.rem_u" => Some((U64s, Rem)),
+            "i64.shl" => Some((U64s, Shl)),
+            "i64.shr_s" => Some((I64s, Shr)),
+            "i64.shr_u" => Some((U64s, Shr)),
+            "i64.sub" => Some((U64s, Sub)),
+            "i64.xor" => Some((U64s, Xor)),
+            
             _ => None,
-        }.and_then(|typ| match &kw[4..] {
-            "add" => Some((typ, Add)),
-            "and" => Some((typ, And)),
-            "div_s" => Some((typ, DivS)),
-            "div_u" => Some((typ, DivU)),
-            "eq" => Some((typ, Eq)),
-            "ge_s" => Some((typ, GeS)),
-            "ge_u" => Some((typ, GeU)),
-            "gt_s" => Some((typ, GtS)),
-            "gt_u" => Some((typ, GtU)),
-            "le_s" => Some((typ, LeS)),
-            "le_u" => Some((typ, LeU)),
-            "lt_s" => Some((typ, LtS)),
-            "lt_u" => Some((typ, LtU)),
-            "mul" => Some((typ, Mul)),
-            "ne" => Some((typ, Ne)),
-            "or" => Some((typ, Or)),
-            "rem_s" => Some((typ, RemS)),
-            "rem_u" => Some((typ, RemU)),
-            "shl" => Some((typ, Shl)),
-            "shr_s" => Some((typ, ShrS)),
-            "shr_u" => Some((typ, ShrU)),
-            "sub" => Some((typ, Sub)),
-            "xor" => Some((typ, Xor)),
+            
+        },
+        _ => None,
+    }
+}
+
+fn is_begin_unary_op_expr<'a>(tok: &Token<'a>) -> Option<(Typ, UnaryOp)> {
+    match *tok {
+        Begin(ref kw) => match &**kw {
+
+            "f32.abs" => Some((F32, Abs)),
+            "f32.neg" => Some((F32, Neg)),
+            "f32.ceil" => Some((F32, Ceil)),
+            "f32.floor" => Some((F32, Floor)),
+            "f32.trunc" => Some((F32, Trunc)),
+            "f32.nearest" => Some((F32, Nearest)),
+            "f32.sqrt" => Some((F32, Sqrt)),
+
+            "f64.abs" => Some((F64, Abs)),
+            "f64.neg" => Some((F64, Neg)),
+            "f64.ceil" => Some((F64, Ceil)),
+            "f64.floor" => Some((F64, Floor)),
+            "f64.trunc" => Some((F64, Trunc)),
+            "f64.nearest" => Some((F64, Nearest)),
+            "f64.sqrt" => Some((F64, Sqrt)),
+
+            "i32.clz" => Some((I32, Clz)),
+            "i32.ctz" => Some((I32, Ctz)),
+            "i32.popcnt" => Some((I32, Popcnt)),
+            "i32.eqz" => Some((I32, Eqz)),
+
+            "i64.clz" => Some((I64, Clz)),
+            "i64.ctz" => Some((I64, Ctz)),
+            "i64.popcnt" => Some((I64, Popcnt)),
+            "i64.eqz" => Some((I64, Eqz)),
+
             _ => None,
-        }),
+            
+        },
         _ => None,
     }
 }
@@ -174,7 +261,7 @@ fn is_begin_get_local_expr<'a>(tok: &Token<'a>) -> bool {
     }
 }
 
-fn mk_bin_op_expr<'a>(typ: Typ, op: BinOp, lhs: Expr, rhs: Expr, _: Token<'a>) -> Expr {
+fn mk_bin_op_expr<'a>(typ: SignedTyp, op: BinOp, lhs: Expr, rhs: Expr, _: Token<'a>) -> Expr {
     BinOpExpr(typ, op, Box::new(lhs), Box::new(rhs))
 }
 

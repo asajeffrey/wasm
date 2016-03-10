@@ -7,12 +7,12 @@ use std::iter::repeat;
 use std::default::Default;
 
 use wasm_ast::{BinOp, Expr, Size, UnaryOp};
-use wasm_ast::BinOp::{Add, And, Copysign, DivF, DivS, DivU, Eq, GeF, GeS, GeU, GtF, GtS};
-use wasm_ast::BinOp::{GtU, LeF, LeS, LeU, LtF, LtS, LtU, Max, Min, Mul, Ne, Or, RemS};
-use wasm_ast::BinOp::{RemU, RotL, RotR, Shl, ShrS, ShrU, Sub, Xor};
+use wasm_ast::BinOp::{Add, And, Copysign, Div, Eq, Ge, Gt, Le, Lt, Max, Min, Mul, Ne};
+use wasm_ast::BinOp::{Or, Rem, RotL, RotR, Shl, Shr, Sub, Xor};
 use wasm_ast::Const::{F32Const, F64Const, I32Const, I64Const};
 use wasm_ast::Expr::{BinOpExpr, ConstExpr, GetLocalExpr, GrowMemoryExpr, IfThenExpr, IfThenElseExpr, LoadExpr, NopExpr, SetLocalExpr, StoreExpr, UnaryOpExpr};
 use wasm_ast::Size::{Bits8, Bits16, Bits32, Bits64};
+use wasm_ast::SignedTyp::{F32s, F64s, I32s, I64s, U32s, U64s};
 use wasm_ast::Typ::{F32, F64, I32, I64};
 use wasm_ast::UnaryOp::{Abs, Ceil, Clz, Ctz, Eqz, Floor, Nearest, Neg, Popcnt, Sqrt, Trunc};
 
@@ -34,11 +34,19 @@ trait Interpreter<T> {
         self.type_error()
     }
     
-    fn binop_i32(&self, _: &BinOp, _: u32, _: u32) -> T {
+    fn binop_i32(&self, _: &BinOp, _: i32, _: i32) -> T {
         self.type_error()
     }
     
-    fn binop_i64(&self, _: &BinOp, _: u64, _: u64) -> T {
+    fn binop_i64(&self, _: &BinOp, _: i64, _: i64) -> T {
+        self.type_error()
+    }
+    
+    fn binop_u32(&self, _: &BinOp, _: u32, _: u32) -> T {
+        self.type_error()
+    }
+    
+    fn binop_u64(&self, _: &BinOp, _: u64, _: u64) -> T {
         self.type_error()
     }
     
@@ -50,11 +58,19 @@ trait Interpreter<T> {
         self.type_error()
     }
     
-    fn unop_i32(&self, _: &UnaryOp, _: u32) -> T {
+    fn unop_i32(&self, _: &UnaryOp, _: i32) -> T {
         self.type_error()
     }
     
-    fn unop_i64(&self, _: &UnaryOp, _: u64) -> T {
+    fn unop_i64(&self, _: &UnaryOp, _: i64) -> T {
+        self.type_error()
+    }
+    
+    fn unop_u32(&self, _: &UnaryOp, _: u32) -> T {
+        self.type_error()
+    }
+    
+    fn unop_u64(&self, _: &UnaryOp, _: u64) -> T {
         self.type_error()
     }
     
@@ -75,32 +91,42 @@ trait Interpreter<T> {
     }
 
     fn interpret_expr(&mut self, expr: &Expr, locals: &mut[[u8;8]], heap: &mut Vec<u8>) -> T
-        where Self: Interpreter<f32> + Interpreter<f64> + Interpreter<u32> + Interpreter<u64>,
+        where Self: Interpreter<f32> + Interpreter<f64> + Interpreter<i32> + Interpreter<i64> + Interpreter<u32> + Interpreter<u64>,
               T: Copy + Default,
     {
         // NOTE: currently only handling the control flow that can be dealt with in direct style.
         // More sophisticated control flow will require a technique for handling a CFG,
         // e.g. functional SSA.
         match expr {
-            &BinOpExpr(F32, ref op, ref lhs, ref rhs) => {
+            &BinOpExpr(F32s, ref op, ref lhs, ref rhs) => {
                 let lhs: f32 = self.interpret_expr(lhs, locals, heap);
                 let rhs: f32 = self.interpret_expr(rhs, locals, heap);
                 self.binop_f32(op, lhs, rhs)
             },
-            &BinOpExpr(F64, ref op, ref lhs, ref rhs) => {
+            &BinOpExpr(F64s, ref op, ref lhs, ref rhs) => {
                 let lhs: f64 = self.interpret_expr(lhs, locals, heap);
                 let rhs: f64 = self.interpret_expr(rhs, locals, heap);
                 self.binop_f64(op, lhs, rhs)
             },
-            &BinOpExpr(I32, ref op, ref lhs, ref rhs) => {
-                let lhs: u32 = self.interpret_expr(lhs, locals, heap);
-                let rhs: u32 = self.interpret_expr(rhs, locals, heap);
+            &BinOpExpr(I32s, ref op, ref lhs, ref rhs) => {
+                let lhs: i32 = self.interpret_expr(lhs, locals, heap);
+                let rhs: i32 = self.interpret_expr(rhs, locals, heap);
                 self.binop_i32(op, lhs, rhs)
             },
-            &BinOpExpr(I64, ref op, ref lhs, ref rhs) => {
+            &BinOpExpr(I64s, ref op, ref lhs, ref rhs) => {
+                let lhs: i64 = self.interpret_expr(lhs, locals, heap);
+                let rhs: i64 = self.interpret_expr(rhs, locals, heap);
+                self.binop_i64(op, lhs, rhs)
+            },
+            &BinOpExpr(U32s, ref op, ref lhs, ref rhs) => {
+                let lhs: u32 = self.interpret_expr(lhs, locals, heap);
+                let rhs: u32 = self.interpret_expr(rhs, locals, heap);
+                self.binop_u32(op, lhs, rhs)
+            },
+            &BinOpExpr(U64s, ref op, ref lhs, ref rhs) => {
                 let lhs: u64 = self.interpret_expr(lhs, locals, heap);
                 let rhs: u64 = self.interpret_expr(rhs, locals, heap);
-                self.binop_i64(op, lhs, rhs)
+                self.binop_u64(op, lhs, rhs)
             },
             &ConstExpr(F32Const(value)) => self.from_f32(value),
             &ConstExpr(F64Const(value)) => self.from_f64(value),
@@ -155,11 +181,11 @@ trait Interpreter<T> {
             },
             &UnaryOpExpr(I32, ref op, ref arg) => {
                 let arg: u32 = self.interpret_expr(arg, locals, heap);
-                self.unop_i32(op, arg)
+                self.unop_u32(op, arg)
             },
             &UnaryOpExpr(I64, ref op, ref arg) => {
                 let arg: u64 = self.interpret_expr(arg, locals, heap);
-                self.unop_i64(op, arg)
+                self.unop_u64(op, arg)
             },
        }
     }
@@ -183,31 +209,33 @@ impl Interpreter<()> for Program {
 
 impl Interpreter<u32> for Program {
 
-    fn binop_i32(&self, op: &BinOp, lhs: u32, rhs: u32) -> u32 {
+    fn binop_i32(&self, op: &BinOp, lhs: i32, rhs: i32) -> u32 {
+        match op {
+            &Ge => (lhs >= rhs) as u32,
+            &Gt => (lhs > rhs) as u32,
+            &Le => (lhs <= rhs) as u32,
+            &Lt => (lhs < rhs) as u32,
+            _ => self.type_error(),
+        }
+    }
+
+    fn binop_u32(&self, op: &BinOp, lhs: u32, rhs: u32) -> u32 {
         match op {
             &Add => (lhs.wrapping_add(rhs)),
             &And => (lhs & rhs),
-            &DivU => (lhs / rhs),
-            &DivS => ((lhs as i32) / (rhs as i32)) as u32,
+            &Div => (lhs / rhs),
             &Eq => (lhs == rhs) as u32,
-            &GeS => ((lhs as i32) >= (rhs as i32)) as u32,
-            &GeU => (lhs >= rhs) as u32,
-            &GtS => ((lhs as i32) > (rhs as i32)) as u32,
-            &GtU => (lhs > rhs) as u32,
-            &LeS => ((lhs as i32) <= (rhs as i32)) as u32,
-            &LeU => (lhs <= rhs) as u32,
-            &LtS => ((lhs as i32) < (rhs as i32)) as u32,
-            &LtU => (lhs < rhs) as u32,
+            &Ge => (lhs >= rhs) as u32,
+            &Gt => (lhs > rhs) as u32,
+            &Le => (lhs <= rhs) as u32,
+            &Lt => (lhs < rhs) as u32,
             &Mul => (lhs.wrapping_mul(rhs)),
             &Ne => (lhs != rhs) as u32,
             &Or => (lhs | rhs),
-            &RemS => ((lhs as i32) % (rhs as i32)) as u32,
-            &RemU => (lhs % rhs),
             &RotL => (lhs.rotate_left(rhs)),
             &RotR => (lhs.rotate_right(rhs)),
             &Shl => (lhs.wrapping_shl(rhs)),
-            &ShrS => ((lhs as i32).wrapping_shr(rhs)) as u32,
-            &ShrU => (lhs.wrapping_shr(rhs)),
+            &Shr => (lhs.wrapping_shr(rhs)),
             &Sub => (lhs.wrapping_sub(rhs)),
             &Xor => (lhs ^ rhs),
             _ => self.type_error(),
@@ -217,16 +245,16 @@ impl Interpreter<u32> for Program {
     fn binop_f32(&self, op: &BinOp, lhs: f32, rhs: f32) -> u32 {
         match op {
             &Eq => (lhs == rhs) as u32,
-            &GeF => (lhs >= rhs) as u32,
-            &GtF => (lhs > rhs) as u32,
-            &LeF => (lhs <= rhs) as u32,
-            &LtF => (lhs < rhs) as u32,
+            &Ge => (lhs >= rhs) as u32,
+            &Gt => (lhs > rhs) as u32,
+            &Le => (lhs <= rhs) as u32,
+            &Lt => (lhs < rhs) as u32,
             &Ne => (lhs != rhs) as u32,
             _ => self.type_error(),
         }
     }
 
-    fn unop_i32(&self, op: &UnaryOp, arg: u32) -> u32 {
+    fn unop_u32(&self, op: &UnaryOp, arg: u32) -> u32 {
         match op {
             &Clz => arg.leading_zeros(),
             &Ctz => arg.trailing_zeros(),
@@ -266,7 +294,7 @@ impl Interpreter<f32> for Program {
         match op {
             &Add => (lhs + rhs),
             &Copysign => (lhs * rhs.signum()),
-            &DivF => (lhs / rhs),
+            &Div => (lhs / rhs),
             &Max => (lhs.max(rhs)),
             &Min => (lhs.min(rhs)),
             &Mul => (lhs * rhs),

@@ -8,11 +8,12 @@ use parsell::{UncommittedStr, Uncommitted};
 use parsell::ParseResult::{Done};
 
 use wasm_ast::{Expr, Export, Function, Import, Memory, Module, Segment, VarDec, VarUse};
-use wasm_ast::BinOp::{Add, And, DivS, DivU, Eq, GeS, GeU, GtS, GtU, LeS, LeU, LtS, LtU};
-use wasm_ast::BinOp::{Mul, Ne, Or, RemS, RemU, Shl, ShrS, ShrU, Sub, Xor};
+use wasm_ast::BinOp::{Add, And, Div, Eq, Ge, Gt, Le, Lt};
+use wasm_ast::BinOp::{Mul, Ne, Or, Rem, Shl, Shr, Sub, Xor};
 use wasm_ast::Const::{F32Const, F64Const, I32Const, I64Const};
 use wasm_ast::Expr::{BinOpExpr, ConstExpr, GetLocalExpr};
 use wasm_ast::Typ::{F32, F64, I32, I64};
+use wasm_ast::SignedTyp::{F32s, F64s, I32s, I64s, U32s, U64s};
 
 use wasm_sexpr::lexer::{LEXER, Token};
 use wasm_sexpr::lexer::Token::{Begin, End, Identifier, Number, Text, Type, Whitespace};
@@ -57,7 +58,7 @@ fn test_expr_parser() {
             End,
         End,
     ], BinOpExpr(
-        F32,
+        F32s,
         Add,
         Box::new(ConstExpr(F32Const(5.0))),
         Box::new(ConstExpr(F32Const(37.0))),
@@ -72,7 +73,7 @@ fn test_expr_parser() {
             End,
         End,
     ], BinOpExpr(
-        F64,
+        F64s,
         Add,
         Box::new(ConstExpr(F64Const(5.0))),
         Box::new(ConstExpr(F64Const(37.0))),
@@ -87,7 +88,7 @@ fn test_expr_parser() {
             End,
         End,
     ], BinOpExpr(
-        I32,
+        U32s,
         Add,
         Box::new(ConstExpr(I32Const(5))),
         Box::new(ConstExpr(I32Const(37))),
@@ -102,7 +103,7 @@ fn test_expr_parser() {
             End,
         End,
     ], BinOpExpr(
-        I64,
+        U64s,
         Add,
         Box::new(ConstExpr(I64Const(5))),
         Box::new(ConstExpr(I64Const(37))),
@@ -117,7 +118,7 @@ fn test_expr_parser() {
             End,
         End,
     ], BinOpExpr(
-        I64,
+        U64s,
         And,
         Box::new(ConstExpr(I64Const(5))),
         Box::new(ConstExpr(I64Const(37))),
@@ -132,8 +133,8 @@ fn test_expr_parser() {
             End,
         End,
     ], BinOpExpr(
-        I64,
-        DivS,
+        I64s,
+        Div,
         Box::new(ConstExpr(I64Const(5))),
         Box::new(ConstExpr(I64Const(37))),
     ));
@@ -147,8 +148,8 @@ fn test_expr_parser() {
             End,
         End,
     ], BinOpExpr(
-        I64,
-        DivU,
+        U64s,
+        Div,
         Box::new(ConstExpr(I64Const(5))),
         Box::new(ConstExpr(I64Const(37))),
     ));
@@ -162,7 +163,7 @@ fn test_expr_parser() {
             End,
         End,
     ], BinOpExpr(
-        I64,
+        U64s,
         Eq,
         Box::new(ConstExpr(I64Const(5))),
         Box::new(ConstExpr(I64Const(37))),
@@ -177,8 +178,8 @@ fn test_expr_parser() {
             End,
         End,
     ], BinOpExpr(
-        I64,
-        GeS,
+        I64s,
+        Ge,
         Box::new(ConstExpr(I64Const(5))),
         Box::new(ConstExpr(I64Const(37))),
     ));
@@ -192,8 +193,8 @@ fn test_expr_parser() {
             End,
         End,
     ], BinOpExpr(
-        I64,
-        GeU,
+        U64s,
+        Ge,
         Box::new(ConstExpr(I64Const(5))),
         Box::new(ConstExpr(I64Const(37))),
     ));
@@ -207,8 +208,8 @@ fn test_expr_parser() {
             End,
         End,
     ], BinOpExpr(
-        I64,
-        GtS,
+        I64s,
+        Gt,
         Box::new(ConstExpr(I64Const(5))),
         Box::new(ConstExpr(I64Const(37))),
     ));
@@ -222,8 +223,8 @@ fn test_expr_parser() {
             End,
         End,
     ], BinOpExpr(
-        I64,
-        GtU,
+        U64s,
+        Gt,
         Box::new(ConstExpr(I64Const(5))),
         Box::new(ConstExpr(I64Const(37))),
     ));
@@ -237,8 +238,8 @@ fn test_expr_parser() {
             End,
         End,
     ], BinOpExpr(
-        I64,
-        LeS,
+        I64s,
+        Le,
         Box::new(ConstExpr(I64Const(5))),
         Box::new(ConstExpr(I64Const(37))),
     ));
@@ -252,8 +253,8 @@ fn test_expr_parser() {
             End,
         End,
     ], BinOpExpr(
-        I64,
-        LeU,
+        U64s,
+        Le,
         Box::new(ConstExpr(I64Const(5))),
         Box::new(ConstExpr(I64Const(37))),
     ));
@@ -267,8 +268,8 @@ fn test_expr_parser() {
             End,
         End,
     ], BinOpExpr(
-        I64,
-        LtS,
+        I64s,
+        Lt,
         Box::new(ConstExpr(I64Const(5))),
         Box::new(ConstExpr(I64Const(37))),
     ));
@@ -282,8 +283,8 @@ fn test_expr_parser() {
             End,
         End,
     ], BinOpExpr(
-        I64,
-        LtU,
+        U64s,
+        Lt,
         Box::new(ConstExpr(I64Const(5))),
         Box::new(ConstExpr(I64Const(37))),
     ));
@@ -297,7 +298,7 @@ fn test_expr_parser() {
             End,
         End,
     ], BinOpExpr(
-        I64,
+        U64s,
         Mul,
         Box::new(ConstExpr(I64Const(5))),
         Box::new(ConstExpr(I64Const(37))),
@@ -312,7 +313,7 @@ fn test_expr_parser() {
             End,
         End,
     ], BinOpExpr(
-        I64,
+        U64s,
         Ne,
         Box::new(ConstExpr(I64Const(5))),
         Box::new(ConstExpr(I64Const(37))),
@@ -327,7 +328,7 @@ fn test_expr_parser() {
             End,
         End,
     ], BinOpExpr(
-        I64,
+        U64s,
         Or,
         Box::new(ConstExpr(I64Const(5))),
         Box::new(ConstExpr(I64Const(37))),
@@ -342,8 +343,8 @@ fn test_expr_parser() {
             End,
         End,
     ], BinOpExpr(
-        I64,
-        RemS,
+        I64s,
+        Rem,
         Box::new(ConstExpr(I64Const(5))),
         Box::new(ConstExpr(I64Const(37))),
     ));
@@ -357,8 +358,8 @@ fn test_expr_parser() {
             End,
         End,
     ], BinOpExpr(
-        I64,
-        RemU,
+        U64s,
+        Rem,
         Box::new(ConstExpr(I64Const(5))),
         Box::new(ConstExpr(I64Const(37))),
     ));
@@ -372,7 +373,7 @@ fn test_expr_parser() {
             End,
         End,
     ], BinOpExpr(
-        I64,
+        U64s,
         Shl,
         Box::new(ConstExpr(I64Const(5))),
         Box::new(ConstExpr(I64Const(37))),
@@ -387,8 +388,8 @@ fn test_expr_parser() {
             End,
         End,
     ], BinOpExpr(
-        I64,
-        ShrS,
+        I64s,
+        Shr,
         Box::new(ConstExpr(I64Const(5))),
         Box::new(ConstExpr(I64Const(37))),
     ));
@@ -402,8 +403,8 @@ fn test_expr_parser() {
             End,
         End,
     ], BinOpExpr(
-        I64,
-        ShrU,
+        U64s,
+        Shr,
         Box::new(ConstExpr(I64Const(5))),
         Box::new(ConstExpr(I64Const(37))),
     ));
@@ -417,7 +418,7 @@ fn test_expr_parser() {
             End,
         End,
     ], BinOpExpr(
-        I64,
+        U64s,
         Sub,
         Box::new(ConstExpr(I64Const(5))),
         Box::new(ConstExpr(I64Const(37))),
@@ -432,7 +433,7 @@ fn test_expr_parser() {
             End,
         End,
     ], BinOpExpr(
-        I64,
+        U64s,
         Xor,
         Box::new(ConstExpr(I64Const(5))),
         Box::new(ConstExpr(I64Const(37))),

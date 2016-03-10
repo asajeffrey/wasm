@@ -3,10 +3,9 @@ extern crate parsell;
 use parsell::{StaticMarker};
 
 #[derive(Clone, Eq, PartialEq, Hash, Ord, PartialOrd, Debug)]
-pub enum BinOp {
-    Add, And, Copysign, DivF, DivS, DivU, Eq, GeF, GeS, GeU, GtF, GtS,
-    GtU, LeF, LeS, LeU, LtF, LtS, LtU, Max, Min, Mul, Ne, Or, RemS,
-    RemU, RotL, RotR, Shl, ShrS, ShrU, Sub, Xor
+pub enum BinOp {    
+    Add, And, Copysign, Div, Eq, Ge, Gt, Le, Lt, Max, Min, Mul, Ne,
+    Or, Rem, RotL, RotR, Shl, Shr, Sub, Xor
 }
 
 #[derive(Clone, Eq, PartialEq, Hash, Ord, PartialOrd, Debug)]
@@ -30,13 +29,13 @@ pub enum Const {
 
 #[derive(Clone, PartialEq, PartialOrd, Debug)]
 pub enum Expr {
-    BinOpExpr(Typ, BinOp, Box<Expr>, Box<Expr>),
+    BinOpExpr(SignedTyp, BinOp, Box<Expr>, Box<Expr>),
     ConstExpr(Const),
     GetLocalExpr(VarUse),
     GrowMemoryExpr(Box<Expr>),
     IfThenExpr(Box<Expr>, Box<Expr>),
     IfThenElseExpr(Box<Expr>, Box<Expr>, Box<Expr>),
-    LoadExpr(Typ, Size, Box<Expr>),
+    LoadExpr(SignedTyp, Size, Box<Expr>),
     NopExpr,
     SetLocalExpr(VarUse, Box<Expr>),
     StoreExpr(Typ, Size, Box<Expr>, Box<Expr>),
@@ -84,19 +83,29 @@ pub struct Segment {
 }
 
 #[derive(Clone, Eq, PartialEq, Hash, Ord, PartialOrd, Debug)]
-pub enum Typ {
-    I32,
-    I64,
-    F32,
-    F64,
-}
-
-#[derive(Clone, Eq, PartialEq, Hash, Ord, PartialOrd, Debug)]
 pub enum Size {
     Bits8,
     Bits16,
     Bits32,
     Bits64,
+}
+
+#[derive(Clone, Eq, PartialEq, Hash, Ord, PartialOrd, Debug)]
+pub enum SignedTyp {
+    I32s,
+    I64s,
+    F32s,
+    F64s,
+    U32s,
+    U64s,
+}
+
+#[derive(Clone, Eq, PartialEq, Hash, Ord, PartialOrd, Debug)]
+pub enum Typ {
+    I32,
+    I64,
+    F32,
+    F64,
 }
 
 #[derive(Clone, Eq, PartialEq, Hash, Ord, PartialOrd, Debug)]
@@ -120,6 +129,8 @@ impl StaticMarker for Import {}
 impl StaticMarker for Segment {}
 impl StaticMarker for Memory {}
 impl StaticMarker for Module {}
+impl StaticMarker for SignedTyp {}
 impl StaticMarker for Typ {}
+impl StaticMarker for UnaryOp {}
 impl StaticMarker for VarDec {}
 impl StaticMarker for VarUse {}
