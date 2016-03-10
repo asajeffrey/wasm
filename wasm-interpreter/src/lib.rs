@@ -4,6 +4,7 @@ extern crate wasm_ast;
 use byteorder::{ByteOrder, LittleEndian};
 
 use std::iter::repeat;
+use std::default::Default;
 
 use wasm_ast::{BinOp, Expr, UnaryOp};
 use wasm_ast::BinOp::{Add, And, DivS, DivU, Eq, GeS, GeU, GtS, GtU, LeS, LeU, LtS, LtU};
@@ -19,29 +20,29 @@ trait Interpreter<T> {
 
     fn interpret_unop(&self, op: &UnaryOp, arg: T) -> T;
 
-    fn interpret_f32(&self, _: f32) -> T {
+    fn from_f32(&self, _: f32) -> T {
         panic!("Type error.")
     }
 
-    fn interpret_f64(&self, _: f64) -> T {
+    fn from_f64(&self, _: f64) -> T {
         panic!("Type error.")
     }
 
-    fn interpret_i32(&self, _: u32) -> T {
+    fn from_i32(&self, _: u32) -> T {
         panic!("Type error.")
     }
 
-    fn interpret_i64(&self, _: u64) -> T {
+    fn from_i64(&self, _: u64) -> T {
         panic!("Type error.")
     }
 
-    fn from_u64(&self, _: u64) -> T;
+    fn from_raw(&self, _: u64) -> T;
 
-    fn to_u64(&self, _: T) -> u64;
+    fn to_raw(&self, _: T) -> u64;
 
     fn interpret_expr(&mut self, expr: &Expr, locals: &mut[u64], heap: &mut Vec<u8>) -> T
         where Self: Interpreter<f32> + Interpreter<f64> + Interpreter<u32> + Interpreter<u64>,
-              T: Copy,
+              T: Copy + Default,
     {
         // NOTE: currently only handling the control flow that can be dealt with in direct style.
         // More sophisticated control flow will require a technique for handling a CFG,
@@ -52,21 +53,21 @@ trait Interpreter<T> {
                 let rhs = self.interpret_expr(rhs, locals, heap);
                 self.interpret_binop(op, lhs, rhs)
             },
-            &ConstExpr(F32Const(value)) => self.interpret_f32(value),
-            &ConstExpr(F64Const(value)) => self.interpret_f64(value),
-            &ConstExpr(I32Const(value)) => self.interpret_i32(value),
-            &ConstExpr(I64Const(value)) => self.interpret_i64(value),
-            &GetLocalExpr(ref var) => self.from_u64(locals[var.position]),
+            &ConstExpr(F32Const(value)) => self.from_f32(value),
+            &ConstExpr(F64Const(value)) => self.from_f64(value),
+            &ConstExpr(I32Const(value)) => self.from_i32(value),
+            &ConstExpr(I64Const(value)) => self.from_i64(value),
+            &GetLocalExpr(ref var) => self.from_raw(locals[var.position]),
             &GrowMemoryExpr(ref ext) => {
                 let result: u32 = heap.len() as u32;
                 let ext: u32 = self.interpret_expr(ext, locals, heap);
                 heap.extend(repeat(0).take(ext as usize));
-                self.interpret_i32(result)
+                self.from_i32(result)
             },
             &IfThenExpr(ref cond, ref true_branch) => {
                 let cond: u32 = self.interpret_expr(cond, locals, heap);
                 if cond == 0 {
-                    self.from_u64(0)
+                    T::default()
                 } else {
                     self.interpret_expr(true_branch, locals, heap)
                 }
@@ -82,52 +83,52 @@ trait Interpreter<T> {
             &LoadExpr(F32, ref addr) => {
                 let addr: u32 = self.interpret_expr(addr, locals, heap);
                 let value: f32 = LittleEndian::read_f32(&heap[addr as usize..]);
-                self.interpret_f32(value)
+                self.from_f32(value)
             },
             &LoadExpr(F64, ref addr) => {
                 let addr: u32 = self.interpret_expr(addr, locals, heap);
                 let value: f64 = LittleEndian::read_f64(&heap[addr as usize..]);
-                self.interpret_f64(value)
+                self.from_f64(value)
             },
             &LoadExpr(I32, ref addr) => {
                 let addr: u32 = self.interpret_expr(addr, locals, heap);
                 let value: u32 = LittleEndian::read_u32(&heap[addr as usize..]);
-                self.interpret_i32(value)
+                self.from_i32(value)
             },
             &LoadExpr(I64, ref addr) => {
                 let addr: u32 = self.interpret_expr(addr, locals, heap);
                 let value: u64 = LittleEndian::read_u64(&heap[addr as usize..]);
-                self.interpret_i64(value)
+                self.from_i64(value)
             },
-            &NopExpr => self.from_u64(0),
+            &NopExpr => T::default(),
             &SetLocalExpr(ref var, ref value) => {
                 let value: T = self.interpret_expr(value, locals, heap);
-                locals[var.position] = self.to_u64(value);
+                locals[var.position] = self.to_raw(value);
                 value
             },
             &StoreExpr(F32, ref addr, ref value) => {
                 let addr: u32 = self.interpret_expr(addr, locals, heap);
                 let value: f32 = self.interpret_expr(value, locals, heap);
                 LittleEndian::write_f32(&mut heap[addr as usize..], value);
-                self.interpret_f32(value)
+                self.from_f32(value)
             },
             &StoreExpr(F64, ref addr, ref value) => {
                 let addr: u32 = self.interpret_expr(addr, locals, heap);
                 let value: f64 = self.interpret_expr(value, locals, heap);
                 LittleEndian::write_f64(&mut heap[addr as usize..], value);
-                self.interpret_f64(value)
+                self.from_f64(value)
             },
             &StoreExpr(I32, ref addr, ref value) => {
                 let addr: u32 = self.interpret_expr(addr, locals, heap);
                 let value: u32 = self.interpret_expr(value, locals, heap);
                 LittleEndian::write_u32(&mut heap[addr as usize..], value);
-                self.interpret_i32(value)
+                self.from_i32(value)
             },
             &StoreExpr(I64, ref addr, ref value) => {
                 let addr: u32 = self.interpret_expr(addr, locals, heap);
                 let value: u64 = self.interpret_expr(value, locals, heap);
                 LittleEndian::write_u64(&mut heap[addr as usize..], value);
-                self.interpret_i64(value)
+                self.from_i64(value)
             },
             &UnaryOpExpr(_, ref op, ref arg) => {
                 let arg = self.interpret_expr(arg, locals, heap);
@@ -181,15 +182,15 @@ impl Interpreter<u32> for Program {
         }
     }
     
-    fn interpret_i32(&self, value: u32) -> u32 {
+    fn from_i32(&self, value: u32) -> u32 {
         value
     }
 
-    fn from_u64(&self, value: u64) -> u32 {
+    fn from_raw(&self, value: u64) -> u32 {
         value as u32
     }
 
-    fn to_u64(&self, value: u32) -> u64 {
+    fn to_raw(&self, value: u32) -> u64 {
         value as u64
     }
 
