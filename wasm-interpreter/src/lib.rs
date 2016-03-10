@@ -9,7 +9,7 @@ use wasm_ast::{BinOp, Expr};
 use wasm_ast::BinOp::{Add, And, DivS, DivU, Eq, GeS, GeU, GtS, GtU, LeS, LeU, LtS, LtU};
 use wasm_ast::BinOp::{Mul, Ne, Or, RemS, RemU, RotL, RotR, Shl, ShrS, ShrU, Sub, Xor};
 use wasm_ast::Const::{F32Const, F64Const, I32Const, I64Const};
-use wasm_ast::Expr::{BinOpExpr, ConstExpr, GetLocalExpr, GrowMemoryExpr, LoadExpr, NopExpr, SetLocalExpr, StoreExpr};
+use wasm_ast::Expr::{BinOpExpr, ConstExpr, GetLocalExpr, GrowMemoryExpr, IfThenExpr, LoadExpr, NopExpr, SetLocalExpr, StoreExpr};
 use wasm_ast::Typ::{F32, F64, I32, I64};
 
 trait Interpreter<T> {
@@ -59,7 +59,15 @@ trait Interpreter<T> {
                 let ext: u32 = self.interpret_expr(ext, locals, heap);
                 heap.extend(repeat(0).take(ext as usize));
                 self.interpret_i32(result)
-            },                
+            },
+            &IfThenExpr(ref cond, ref true_branch) => {
+                let cond: u32 = self.interpret_expr(cond, locals, heap);
+                if cond == 0 {
+                    self.from_u64(0)
+                } else {
+                    self.interpret_expr(true_branch, locals, heap)
+                }
+            },
             &LoadExpr(F32, ref addr) => {
                 let addr: u32 = self.interpret_expr(addr, locals, heap);
                 let value: f32 = LittleEndian::read_f32(&heap[addr as usize..]);
