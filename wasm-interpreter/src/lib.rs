@@ -5,16 +5,19 @@ use byteorder::{ByteOrder, LittleEndian};
 
 use std::iter::repeat;
 
-use wasm_ast::{BinOp, Expr};
+use wasm_ast::{BinOp, Expr, UnaryOp};
 use wasm_ast::BinOp::{Add, And, DivS, DivU, Eq, GeS, GeU, GtS, GtU, LeS, LeU, LtS, LtU};
 use wasm_ast::BinOp::{Mul, Ne, Or, RemS, RemU, RotL, RotR, Shl, ShrS, ShrU, Sub, Xor};
 use wasm_ast::Const::{F32Const, F64Const, I32Const, I64Const};
-use wasm_ast::Expr::{BinOpExpr, ConstExpr, GetLocalExpr, GrowMemoryExpr, IfThenExpr, IfThenElseExpr, LoadExpr, NopExpr, SetLocalExpr, StoreExpr};
+use wasm_ast::Expr::{BinOpExpr, ConstExpr, GetLocalExpr, GrowMemoryExpr, IfThenExpr, IfThenElseExpr, LoadExpr, NopExpr, SetLocalExpr, StoreExpr, UnaryOpExpr};
 use wasm_ast::Typ::{F32, F64, I32, I64};
+use wasm_ast::UnaryOp::{Clz, Ctz, Popcnt, Eqz};
 
 trait Interpreter<T> {
 
     fn interpret_binop(&self, op: &BinOp, lhs: T, rhs: T) -> T;
+
+    fn interpret_unop(&self, op: &UnaryOp, arg: T) -> T;
 
     fn interpret_f32(&self, _: f32) -> T {
         panic!("Type error.")
@@ -126,6 +129,10 @@ trait Interpreter<T> {
                 LittleEndian::write_u64(&mut heap[addr as usize..], value);
                 self.interpret_i64(value)
             },
+            &UnaryOpExpr(_, ref op, ref arg) => {
+                let arg = self.interpret_expr(arg, locals, heap);
+                self.interpret_unop(op, arg)
+            },
        }
     }
 
@@ -165,6 +172,15 @@ impl Interpreter<u32> for Program {
         }
     }
 
+    fn interpret_unop(&self, op: &UnaryOp, arg: u32) -> u32 {
+        match op {
+            &Clz => arg.leading_zeros(),
+            &Ctz => arg.trailing_zeros(),
+            &Popcnt => arg.count_ones(),
+            &Eqz => (arg == 0) as u32,
+        }
+    }
+    
     fn interpret_i32(&self, value: u32) -> u32 {
         value
     }

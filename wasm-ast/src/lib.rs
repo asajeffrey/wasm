@@ -9,6 +9,11 @@ pub enum BinOp {
 }
 
 #[derive(Clone, Eq, PartialEq, Hash, Ord, PartialOrd, Debug)]
+pub enum UnaryOp {
+    Clz, Ctz, Popcnt, Eqz
+}
+
+#[derive(Clone, Eq, PartialEq, Hash, Ord, PartialOrd, Debug)]
 pub struct Export {
     pub name: String,
     pub func: String,
@@ -34,6 +39,7 @@ pub enum Expr {
     NopExpr,
     SetLocalExpr(VarUse, Box<Expr>),
     StoreExpr(Typ, Box<Expr>, Box<Expr>),
+    UnaryOpExpr(Typ, UnaryOp, Box<Expr>),
 }
 
 #[derive(Clone, PartialEq, PartialOrd, Debug)]
