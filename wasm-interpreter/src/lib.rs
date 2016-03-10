@@ -9,7 +9,7 @@ use wasm_ast::{BinOp, Expr};
 use wasm_ast::BinOp::{Add, And, DivS, DivU, Eq, GeS, GeU, GtS, GtU, LeS, LeU, LtS, LtU};
 use wasm_ast::BinOp::{Mul, Ne, Or, RemS, RemU, RotL, RotR, Shl, ShrS, ShrU, Sub, Xor};
 use wasm_ast::Const::{F32Const, F64Const, I32Const, I64Const};
-use wasm_ast::Expr::{BinOpExpr, ConstExpr, GetLocalExpr, GrowMemoryExpr, LoadExpr, SetLocalExpr, StoreExpr};
+use wasm_ast::Expr::{BinOpExpr, ConstExpr, GetLocalExpr, GrowMemoryExpr, LoadExpr, NopExpr, SetLocalExpr, StoreExpr};
 use wasm_ast::Typ::{F32, F64, I32, I64};
 
 trait Interpreter<T> {
@@ -40,6 +40,9 @@ trait Interpreter<T> {
         where Self: Interpreter<f32> + Interpreter<f64> + Interpreter<u32> + Interpreter<u64>,
               T: Copy,
     {
+        // NOTE: currently only handling the control flow that can be dealt with in direct style.
+        // More sophisticated control flow will require a technique for handling a CFG,
+        // e.g. functional SSA.
         match expr {
             &BinOpExpr(_, ref op, ref lhs, ref rhs) => {
                 let lhs = self.interpret_expr(lhs, locals, heap);
@@ -77,6 +80,7 @@ trait Interpreter<T> {
                 let value: u64 = LittleEndian::read_u64(&heap[addr as usize..]);
                 self.interpret_i64(value)
             },
+            &NopExpr => self.from_u64(0),
             &SetLocalExpr(ref var, ref value) => {
                 let value: T = self.interpret_expr(value, locals, heap);
                 locals[var.position] = self.to_u64(value);
