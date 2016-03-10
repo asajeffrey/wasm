@@ -4,13 +4,14 @@ use parsell::{StaticMarker};
 
 #[derive(Clone, Eq, PartialEq, Hash, Ord, PartialOrd, Debug)]
 pub enum BinOp {
-    Add, And, DivS, DivU, Eq, GeS, GeU, GtS, GtU, LeS, LeU, LtS, LtU,
-    Mul, Ne, Or, RemS, RemU, RotL, RotR, Shl, ShrS, ShrU, Sub, Xor
+    Add, And, Copysign, DivF, DivS, DivU, Eq, GeF, GeS, GeU, GtF, GtS,
+    GtU, LeF, LeS, LeU, LtF, LtS, LtU, Max, Min, Mul, Ne, Or, RemS,
+    RemU, RotL, RotR, Shl, ShrS, ShrU, Sub, Xor
 }
 
 #[derive(Clone, Eq, PartialEq, Hash, Ord, PartialOrd, Debug)]
 pub enum UnaryOp {
-    Clz, Ctz, Popcnt, Eqz
+    Abs, Ceil, Clz, Ctz, Eqz, Floor, Nearest, Neg, Popcnt, Sqrt, Trunc
 }
 
 #[derive(Clone, Eq, PartialEq, Hash, Ord, PartialOrd, Debug)]
