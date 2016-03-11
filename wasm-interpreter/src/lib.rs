@@ -239,6 +239,17 @@ trait Interpreter<T> {
             },
        }
     }
+
+    fn interpret_main(&self)
+        where Self: Interpreter<()> + Interpreter<f32> + Interpreter<f64> + Interpreter<i32> + Interpreter<i64> + Interpreter<u32> + Interpreter<u64> + FunctionTable + InitialHeap,
+    {
+        let main = self.lookup_function("main");
+        let mut locals: Vec<[u8;8]> = repeat([0;8]).take(main.locals.len()).collect();
+        let mut heap = self.init_heap();
+        for expr in &main.body {
+            let () = self.interpret_expr(&expr, &mut locals, &mut heap);
+        }
+    }
     
 }
 
