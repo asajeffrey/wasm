@@ -215,6 +215,126 @@ impl<I> InterpretPrimitives<f32> for I {
 
 }
 
+impl<I> InterpretPrimitives<f64> for I {
+
+    fn binop_f64(&self, op: &BinOp, lhs: f64, rhs: f64) -> f64 {
+        match op {
+            &Add => (lhs + rhs),
+            &Copysign => (lhs * rhs.signum()),
+            &Div => (lhs / rhs),
+            &Max => (lhs.max(rhs)),
+            &Min => (lhs.min(rhs)),
+            &Mul => (lhs * rhs),
+            &Sub => (lhs - rhs),
+            _ => self.type_error(),
+        }
+    }
+
+    fn unop_f64(&self, op: &UnaryOp, arg: f64) -> f64 {
+        match op {
+            &Abs => arg.abs(),
+            &Ceil => arg.ceil(),
+            &Floor => arg.floor(),
+            &Nearest => arg.round(),
+            &Neg => -arg,
+            &Sqrt => arg.sqrt(),
+            &Trunc => arg.trunc(),
+            _ => self.type_error(),
+        }
+    }
+
+    fn from_f64(&self, value: f64) -> f64 {
+        value
+    }
+
+    fn get_raw(&self, size: &Size, bytes: &[u8]) -> f64 {
+        match size {
+            &Bits64 => LittleEndian::read_f64(bytes),
+            _ => self.type_error(),
+        }
+    }
+
+    fn set_raw(&self, size: &Size, bytes: &mut [u8], value: f64) {
+        match size {
+            &Bits64 => LittleEndian::write_f64(bytes, value),
+            _ => self.type_error(),
+        }
+    }
+
+}
+
+impl<I> InterpretPrimitives<i32> for I {
+
+    fn binop_i32(&self, op: &BinOp, lhs: i32, rhs: i32) -> i32 {
+        match op {
+            &Add => (lhs.wrapping_add(rhs)),
+            &Div => (lhs / rhs),
+            &Mul => (lhs.wrapping_mul(rhs)),
+            &Rem => (lhs % rhs),
+            _ => self.type_error(),
+        }
+    }
+
+    fn from_i32(&self, value: u32) -> i32 {
+        value as i32
+    }
+
+    fn get_raw(&self, size: &Size, bytes: &[u8]) -> i32 {
+        match size {
+            &Bits64 => LittleEndian::read_i32(&bytes[4..]),
+            &Bits32 => LittleEndian::read_i32(bytes),
+            &Bits16 => LittleEndian::read_i16(bytes) as i32,
+            &Bits8  => (bytes[0] as i8) as i32,
+        }
+    }
+
+    fn set_raw(&self, size: &Size, bytes: &mut [u8], value: i32) {
+        match size {
+            &Bits64 => LittleEndian::write_i32(&mut bytes[4..], value),
+            &Bits32 => LittleEndian::write_i32(bytes, value as i32),
+            &Bits16 => LittleEndian::write_i16(bytes, value as i16),
+            &Bits8 => bytes[0] = value as u8,
+        }
+    }
+
+}
+
+impl<I> InterpretPrimitives<i64> for I {
+
+    fn binop_i64(&self, op: &BinOp, lhs: i64, rhs: i64) -> i64 {
+        match op {
+            &Add => (lhs.wrapping_add(rhs)),
+            &Div => (lhs / rhs),
+            &Mul => (lhs.wrapping_mul(rhs)),
+            &Rem => (lhs % rhs),
+            _ => self.type_error(),
+        }
+    }
+
+    fn from_i64(&self, value: u64) -> i64 {
+        value as i64
+    }
+
+    fn get_raw(&self, size: &Size, bytes: &[u8]) -> i64 {
+        match size {
+            &Bits64 => LittleEndian::read_i64(bytes),
+            &Bits32 => LittleEndian::read_i32(bytes) as i64,
+            &Bits16 => LittleEndian::read_i16(bytes) as i64,
+            &Bits8  => (bytes[0] as i8) as i64,
+        }
+    }
+
+    fn set_raw(&self, size: &Size, bytes: &mut [u8], value: i64) {
+        match size {
+            &Bits64 => LittleEndian::write_i64(bytes, value),
+            &Bits32 => LittleEndian::write_i32(bytes, value as i32),
+            &Bits16 => LittleEndian::write_i16(bytes, value as i16),
+            &Bits8 => bytes[0] = value as u8,
+        }
+    }
+
+}
+
 impl<I> InterpretPrimitives<u32> for I {
 
     fn binop_i32(&self, op: &BinOp, lhs: i32, rhs: i32) -> u32 {
@@ -290,6 +410,59 @@ impl<I> InterpretPrimitives<u32> for I {
         match size {
             &Bits64 => LittleEndian::write_u32(&mut bytes[4..], value),
             &Bits32 => LittleEndian::write_u32(bytes, value),
+            &Bits16 => LittleEndian::write_u16(bytes, value as u16),
+            &Bits8 => bytes[0] = value as u8,
+        }
+    }
+
+}
+
+impl<I> InterpretPrimitives<u64> for I {
+
+    fn binop_u64(&self, op: &BinOp, lhs: u64, rhs: u64) -> u64 {
+        match op {
+            &Add => (lhs.wrapping_add(rhs)),
+            &And => (lhs & rhs),
+            &Div => (lhs / rhs),
+            &Mul => (lhs.wrapping_mul(rhs)),
+            &Or => (lhs | rhs),
+            &Rem => (lhs % rhs),
+            &RotL => (lhs.rotate_left(rhs as u32)),
+            &RotR => (lhs.rotate_right(rhs as u32)),
+            &Shl => (lhs.wrapping_shl(rhs as u32)),
+            &Shr => (lhs.wrapping_shr(rhs as u32)),
+            &Sub => (lhs.wrapping_sub(rhs)),
+            &Xor => (lhs ^ rhs),
+            _ => self.type_error(),
+        }
+    }
+
+    fn unop_u64(&self, op: &UnaryOp, arg: u64) -> u64 {
+        match op {
+            &Clz => arg.leading_zeros() as u64,
+            &Ctz => arg.trailing_zeros() as u64,
+            &Popcnt => arg.count_ones() as u64,
+            _ => self.type_error(),
+        }
+    }
+
+    fn from_i64(&self, value: u64) -> u64 {
+        value
+    }
+
+    fn get_raw(&self, size: &Size, bytes: &[u8]) -> u64 {
+        match size {
+            &Bits64 => LittleEndian::read_u64(bytes),
+            &Bits32 => LittleEndian::read_u32(bytes) as u64,
+            &Bits16 => LittleEndian::read_u16(bytes) as u64,
+            &Bits8  => bytes[0] as u64,
+        }
+    }
+
+    fn set_raw(&self, size: &Size, bytes: &mut [u8], value: u64) {
+        match size {
+            &Bits64 => LittleEndian::write_u64(bytes, value),
+            &Bits32 => LittleEndian::write_u32(bytes, value as u32),
             &Bits16 => LittleEndian::write_u16(bytes, value as u16),
             &Bits8 => bytes[0] = value as u8,
         }
