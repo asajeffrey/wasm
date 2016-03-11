@@ -40,7 +40,7 @@ trait InterpretPrimitives<T> {
         self.set_raw(&Bits64, &mut result, value);
         result
     }
-                                          
+
     fn type_error(&self) -> T {
         panic!("Type error.")
     }
@@ -48,51 +48,51 @@ trait InterpretPrimitives<T> {
     fn binop_f32(&self, _: &BinOp, _: f32, _: f32) -> T {
         self.type_error()
     }
-    
+
     fn binop_f64(&self, _: &BinOp, _: f64, _: f64) -> T {
         self.type_error()
     }
-    
+
     fn binop_i32(&self, _: &BinOp, _: i32, _: i32) -> T {
         self.type_error()
     }
-    
+
     fn binop_i64(&self, _: &BinOp, _: i64, _: i64) -> T {
         self.type_error()
     }
-    
+
     fn binop_u32(&self, _: &BinOp, _: u32, _: u32) -> T {
         self.type_error()
     }
-    
+
     fn binop_u64(&self, _: &BinOp, _: u64, _: u64) -> T {
         self.type_error()
     }
-    
+
     fn unop_f32(&self, _: &UnaryOp, _: f32) -> T {
         self.type_error()
     }
-    
+
     fn unop_f64(&self, _: &UnaryOp, _: f64) -> T {
         self.type_error()
     }
-    
+
     fn unop_i32(&self, _: &UnaryOp, _: i32) -> T {
         self.type_error()
     }
-    
+
     fn unop_i64(&self, _: &UnaryOp, _: i64) -> T {
         self.type_error()
     }
-    
+
     fn unop_u32(&self, _: &UnaryOp, _: u32) -> T {
         self.type_error()
     }
-    
+
     fn unop_u64(&self, _: &UnaryOp, _: u64) -> T {
         self.type_error()
     }
-    
+
     fn from_f32(&self, _: f32) -> T {
         self.type_error()
     }
@@ -155,7 +155,7 @@ impl<I> InterpretPrimitives<()> for I {
     fn binop_i64(&self, _: &BinOp, _: i64, _: i64) {}
     fn binop_u32(&self, _: &BinOp, _: u32, _: u32) {}
     fn binop_u64(&self, _: &BinOp, _: u64, _: u64) {}
-    
+
     fn unop_f32(&self, _: &UnaryOp, _: f32) {}
     fn unop_f64(&self, _: &UnaryOp, _: f64) {}
     fn unop_i32(&self, _: &UnaryOp, _: i32) {}
@@ -222,7 +222,7 @@ impl<I> InterpretPrimitives<u32> for I {
             _ => self.type_error(),
         }
     }
-    
+
     fn from_i32(&self, value: u32) -> u32 {
         value
     }
@@ -274,7 +274,7 @@ impl<I> InterpretPrimitives<f32> for I {
             _ => self.type_error(),
         }
     }
-    
+
     fn from_f32(&self, value: f32) -> f32 {
         value
     }
@@ -439,7 +439,7 @@ impl<I, T> InterpretExpr<T> for I
 impl<I> InterpretMain for I
     where I: InterpretExpr<()> + FunctionTable + InitialHeap
 {
-    
+
     fn interpret_main(&self) {
         let main = self.lookup_function("main");
         let mut locals: Vec<[u8;8]> = repeat([0;8]).take(main.locals.len()).collect();
@@ -448,5 +448,5 @@ impl<I> InterpretMain for I
             let () = self.interpret_expr(&expr, &mut locals, &mut heap);
         }
     }
-    
+
 }
