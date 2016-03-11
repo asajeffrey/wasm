@@ -108,7 +108,7 @@ trait Interpreter<T> {
         self.type_error()
     }
 
-    fn interpret_expr(&mut self, expr: &Expr, locals: &mut[[u8;8]], heap: &mut Vec<u8>) -> T
+    fn interpret_expr(&self, expr: &Expr, locals: &mut[[u8;8]], heap: &mut Vec<u8>) -> T
         where Self: Interpreter<()> + Interpreter<f32> + Interpreter<f64> + Interpreter<i32> + Interpreter<i64> + Interpreter<u32> + Interpreter<u64> + FunctionTable,
               T: Copy + Default,
     {
