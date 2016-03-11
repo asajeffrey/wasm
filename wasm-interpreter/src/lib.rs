@@ -3,8 +3,9 @@ extern crate wasm_ast;
 
 use byteorder::{ByteOrder, LittleEndian};
 
-use std::iter::repeat;
+use std::collections::HashMap;
 use std::default::Default;
+use std::iter::repeat;
 
 use wasm_ast::{BinOp, Expr, Function, Size, UnaryOp};
 use wasm_ast::BinOp::{Add, And, Copysign, Div, Eq, Ge, Gt, Le, Lt, Max, Min, Mul, Ne};
@@ -241,7 +242,26 @@ trait Interpreter<T> {
     
 }
 
-pub struct Program;
+pub struct Program {
+    functions: HashMap<String, Function>,
+    heap: Vec<u8>,
+}
+
+impl FunctionTable for Program {
+
+    fn lookup_function(&self, name: &str) -> &Function {
+        &self.functions.get(name).unwrap()
+    }
+
+}
+
+impl InitialHeap for Program {
+
+    fn init_heap(&self) -> Vec<u8> {
+        self.heap.clone()
+    }
+
+}
 
 impl Interpreter<()> for Program {
 
