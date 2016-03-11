@@ -18,7 +18,13 @@ use wasm_ast::UnaryOp::{Abs, Ceil, Clz, Ctz, Eqz, Floor, Nearest, Neg, Popcnt, S
 
 trait FunctionTable {
 
-    fn lookup_function(&self, name: &str) -> Function;
+    fn lookup_function(&self, name: &str) -> &Function;
+
+}
+
+trait InitialHeap {
+
+    fn init_heap(&self) -> Vec<u8>;
 
 }
 
@@ -141,7 +147,7 @@ trait Interpreter<T> {
                 self.binop_u64(op, lhs, rhs)
             },
             &CallExpr(ref name, ref args) => {
-                let defn: Function = self.lookup_function(name);
+                let defn = self.lookup_function(name);
                 let mut new_locals: Vec<[u8;8]> = defn.params.iter().zip(args).map(|(param, arg)| {
                     match param.typ {
                         F32 => {
