@@ -29,7 +29,7 @@ trait InitialHeap {
 
 }
 
-trait Interpreter<T> {
+trait InterpretPrimitives<T> {
 
     fn get_raw(&self, _: &Size, _: &[u8]) -> T;
 
@@ -109,10 +109,204 @@ trait Interpreter<T> {
         self.type_error()
     }
 
-    fn interpret_expr(&self, expr: &Expr, locals: &mut[[u8;8]], heap: &mut Vec<u8>) -> T
-        where Self: Interpreter<()> + Interpreter<f32> + Interpreter<f64> + Interpreter<i32> + Interpreter<i64> + Interpreter<u32> + Interpreter<u64> + FunctionTable,
-              T: Copy + Default,
-    {
+}
+
+trait InterpretExpr<T> {
+
+    fn interpret_expr(&self, expr: &Expr, locals: &mut[[u8;8]], heap: &mut Vec<u8>) -> T;
+
+}
+
+trait InterpretMain {
+
+    fn interpret_main(&self);
+
+}
+
+pub struct Program {
+    functions: HashMap<String, Function>,
+    heap: Vec<u8>,
+}
+
+impl FunctionTable for Program {
+
+    fn lookup_function(&self, name: &str) -> &Function {
+        &self.functions.get(name).unwrap()
+    }
+
+}
+
+impl InitialHeap for Program {
+
+    fn init_heap(&self) -> Vec<u8> {
+        self.heap.clone()
+    }
+
+}
+
+impl<I> InterpretPrimitives<()> for I {
+
+    fn get_raw(&self, _: &Size, _: &[u8]) {}
+    fn set_raw(&self, _: &Size, _: &mut [u8], _: ()) {}
+
+    fn binop_f32(&self, _: &BinOp, _: f32, _: f32) {}
+    fn binop_f64(&self, _: &BinOp, _: f64, _: f64) {}
+    fn binop_i32(&self, _: &BinOp, _: i32, _: i32) {}
+    fn binop_i64(&self, _: &BinOp, _: i64, _: i64) {}
+    fn binop_u32(&self, _: &BinOp, _: u32, _: u32) {}
+    fn binop_u64(&self, _: &BinOp, _: u64, _: u64) {}
+    
+    fn unop_f32(&self, _: &UnaryOp, _: f32) {}
+    fn unop_f64(&self, _: &UnaryOp, _: f64) {}
+    fn unop_i32(&self, _: &UnaryOp, _: i32) {}
+    fn unop_i64(&self, _: &UnaryOp, _: i64) {}
+    fn unop_u32(&self, _: &UnaryOp, _: u32) {}
+    fn unop_u64(&self, _: &UnaryOp, _: u64) {}
+
+}
+
+impl<I> InterpretPrimitives<u32> for I {
+
+    fn binop_i32(&self, op: &BinOp, lhs: i32, rhs: i32) -> u32 {
+        match op {
+            &Ge => (lhs >= rhs) as u32,
+            &Gt => (lhs > rhs) as u32,
+            &Le => (lhs <= rhs) as u32,
+            &Lt => (lhs < rhs) as u32,
+            _ => self.type_error(),
+        }
+    }
+
+    fn binop_u32(&self, op: &BinOp, lhs: u32, rhs: u32) -> u32 {
+        match op {
+            &Add => (lhs.wrapping_add(rhs)),
+            &And => (lhs & rhs),
+            &Div => (lhs / rhs),
+            &Eq => (lhs == rhs) as u32,
+            &Ge => (lhs >= rhs) as u32,
+            &Gt => (lhs > rhs) as u32,
+            &Le => (lhs <= rhs) as u32,
+            &Lt => (lhs < rhs) as u32,
+            &Mul => (lhs.wrapping_mul(rhs)),
+            &Ne => (lhs != rhs) as u32,
+            &Or => (lhs | rhs),
+            &Rem => (lhs % rhs),
+            &RotL => (lhs.rotate_left(rhs)),
+            &RotR => (lhs.rotate_right(rhs)),
+            &Shl => (lhs.wrapping_shl(rhs)),
+            &Shr => (lhs.wrapping_shr(rhs)),
+            &Sub => (lhs.wrapping_sub(rhs)),
+            &Xor => (lhs ^ rhs),
+            _ => self.type_error(),
+        }
+    }
+
+    fn binop_f32(&self, op: &BinOp, lhs: f32, rhs: f32) -> u32 {
+        match op {
+            &Eq => (lhs == rhs) as u32,
+            &Ge => (lhs >= rhs) as u32,
+            &Gt => (lhs > rhs) as u32,
+            &Le => (lhs <= rhs) as u32,
+            &Lt => (lhs < rhs) as u32,
+            &Ne => (lhs != rhs) as u32,
+            _ => self.type_error(),
+        }
+    }
+
+    fn unop_u32(&self, op: &UnaryOp, arg: u32) -> u32 {
+        match op {
+            &Clz => arg.leading_zeros(),
+            &Ctz => arg.trailing_zeros(),
+            &Popcnt => arg.count_ones(),
+            &Eqz => (arg == 0) as u32,
+            _ => self.type_error(),
+        }
+    }
+    
+    fn from_i32(&self, value: u32) -> u32 {
+        value
+    }
+
+    fn get_raw(&self, size: &Size, bytes: &[u8]) -> u32 {
+        match size {
+            &Bits64 => LittleEndian::read_u32(&bytes[4..]),
+            &Bits32 => LittleEndian::read_u32(bytes),
+            &Bits16 => LittleEndian::read_u16(bytes) as u32,
+            &Bits8  => bytes[0] as u32,
+        }
+    }
+
+    fn set_raw(&self, size: &Size, bytes: &mut [u8], value: u32) {
+        match size {
+            &Bits64 => LittleEndian::write_u32(&mut bytes[4..], value),
+            &Bits32 => LittleEndian::write_u32(bytes, value),
+            &Bits16 => LittleEndian::write_u16(bytes, value as u16),
+            &Bits8 => bytes[0] = value as u8,
+        }
+    }
+
+}
+
+impl<I> InterpretPrimitives<f32> for I {
+
+    fn binop_f32(&self, op: &BinOp, lhs: f32, rhs: f32) -> f32 {
+        match op {
+            &Add => (lhs + rhs),
+            &Copysign => (lhs * rhs.signum()),
+            &Div => (lhs / rhs),
+            &Max => (lhs.max(rhs)),
+            &Min => (lhs.min(rhs)),
+            &Mul => (lhs * rhs),
+            &Sub => (lhs - rhs),
+            _ => self.type_error(),
+        }
+    }
+
+    fn unop_f32(&self, op: &UnaryOp, arg: f32) -> f32 {
+        match op {
+            &Abs => arg.abs(),
+            &Ceil => arg.ceil(),
+            &Floor => arg.floor(),
+            &Nearest => arg.round(),
+            &Neg => -arg,
+            &Sqrt => arg.sqrt(),
+            &Trunc => arg.trunc(),
+            _ => self.type_error(),
+        }
+    }
+    
+    fn from_f32(&self, value: f32) -> f32 {
+        value
+    }
+
+    fn get_raw(&self, size: &Size, bytes: &[u8]) -> f32 {
+        match size {
+            &Bits64 => LittleEndian::read_f32(&bytes[4..]),
+            &Bits32 => LittleEndian::read_f32(bytes),
+            _ => self.type_error(),
+        }
+    }
+
+    fn set_raw(&self, size: &Size, bytes: &mut [u8], value: f32) {
+        match size {
+            &Bits64 => LittleEndian::write_f32(&mut bytes[4..], value),
+            &Bits32 => LittleEndian::write_f32(bytes, value),
+            _ => self.type_error(),
+        }
+    }
+
+}
+
+impl<I, T> InterpretExpr<T> for I
+    where I: InterpretPrimitives<()> + InterpretPrimitives<T> +
+            InterpretPrimitives<f32> + InterpretPrimitives<f64> +
+            InterpretPrimitives<i32> + InterpretPrimitives<i64> +
+            InterpretPrimitives<u32> + InterpretPrimitives<u64> +
+            FunctionTable,
+          T: Copy + Default,
+{
+
+    fn interpret_expr(&self, expr: &Expr, locals: &mut[[u8;8]], heap: &mut Vec<u8>) -> T {
         // NOTE: currently only handling the control flow that can be dealt with in direct style.
         // More sophisticated control flow will require a technique for handling a CFG,
         // e.g. functional SSA.
@@ -240,9 +434,13 @@ trait Interpreter<T> {
        }
     }
 
-    fn interpret_main(&self)
-        where Self: Interpreter<()> + Interpreter<f32> + Interpreter<f64> + Interpreter<i32> + Interpreter<i64> + Interpreter<u32> + Interpreter<u64> + FunctionTable + InitialHeap,
-    {
+}
+
+impl<I> InterpretMain for I
+    where I: InterpretExpr<()> + FunctionTable + InitialHeap
+{
+    
+    fn interpret_main(&self) {
         let main = self.lookup_function("main");
         let mut locals: Vec<[u8;8]> = repeat([0;8]).take(main.locals.len()).collect();
         let mut heap = self.init_heap();
@@ -251,179 +449,4 @@ trait Interpreter<T> {
         }
     }
     
-}
-
-pub struct Program {
-    functions: HashMap<String, Function>,
-    heap: Vec<u8>,
-}
-
-impl FunctionTable for Program {
-
-    fn lookup_function(&self, name: &str) -> &Function {
-        &self.functions.get(name).unwrap()
-    }
-
-}
-
-impl InitialHeap for Program {
-
-    fn init_heap(&self) -> Vec<u8> {
-        self.heap.clone()
-    }
-
-}
-
-impl Interpreter<()> for Program {
-
-    fn get_raw(&self, _: &Size, _: &[u8]) {}
-    fn set_raw(&self, _: &Size, _: &mut [u8], _: ()) {}
-
-    fn binop_f32(&self, _: &BinOp, _: f32, _: f32) {}
-    fn binop_f64(&self, _: &BinOp, _: f64, _: f64) {}
-    fn binop_i32(&self, _: &BinOp, _: i32, _: i32) {}
-    fn binop_i64(&self, _: &BinOp, _: i64, _: i64) {}
-    fn binop_u32(&self, _: &BinOp, _: u32, _: u32) {}
-    fn binop_u64(&self, _: &BinOp, _: u64, _: u64) {}
-    
-    fn unop_f32(&self, _: &UnaryOp, _: f32) {}
-    fn unop_f64(&self, _: &UnaryOp, _: f64) {}
-    fn unop_i32(&self, _: &UnaryOp, _: i32) {}
-    fn unop_i64(&self, _: &UnaryOp, _: i64) {}
-    fn unop_u32(&self, _: &UnaryOp, _: u32) {}
-    fn unop_u64(&self, _: &UnaryOp, _: u64) {}
-
-}
-
-
-impl Interpreter<u32> for Program {
-
-    fn binop_i32(&self, op: &BinOp, lhs: i32, rhs: i32) -> u32 {
-        match op {
-            &Ge => (lhs >= rhs) as u32,
-            &Gt => (lhs > rhs) as u32,
-            &Le => (lhs <= rhs) as u32,
-            &Lt => (lhs < rhs) as u32,
-            _ => self.type_error(),
-        }
-    }
-
-    fn binop_u32(&self, op: &BinOp, lhs: u32, rhs: u32) -> u32 {
-        match op {
-            &Add => (lhs.wrapping_add(rhs)),
-            &And => (lhs & rhs),
-            &Div => (lhs / rhs),
-            &Eq => (lhs == rhs) as u32,
-            &Ge => (lhs >= rhs) as u32,
-            &Gt => (lhs > rhs) as u32,
-            &Le => (lhs <= rhs) as u32,
-            &Lt => (lhs < rhs) as u32,
-            &Mul => (lhs.wrapping_mul(rhs)),
-            &Ne => (lhs != rhs) as u32,
-            &Or => (lhs | rhs),
-            &Rem => (lhs % rhs),
-            &RotL => (lhs.rotate_left(rhs)),
-            &RotR => (lhs.rotate_right(rhs)),
-            &Shl => (lhs.wrapping_shl(rhs)),
-            &Shr => (lhs.wrapping_shr(rhs)),
-            &Sub => (lhs.wrapping_sub(rhs)),
-            &Xor => (lhs ^ rhs),
-            _ => self.type_error(),
-        }
-    }
-
-    fn binop_f32(&self, op: &BinOp, lhs: f32, rhs: f32) -> u32 {
-        match op {
-            &Eq => (lhs == rhs) as u32,
-            &Ge => (lhs >= rhs) as u32,
-            &Gt => (lhs > rhs) as u32,
-            &Le => (lhs <= rhs) as u32,
-            &Lt => (lhs < rhs) as u32,
-            &Ne => (lhs != rhs) as u32,
-            _ => self.type_error(),
-        }
-    }
-
-    fn unop_u32(&self, op: &UnaryOp, arg: u32) -> u32 {
-        match op {
-            &Clz => arg.leading_zeros(),
-            &Ctz => arg.trailing_zeros(),
-            &Popcnt => arg.count_ones(),
-            &Eqz => (arg == 0) as u32,
-            _ => self.type_error(),
-        }
-    }
-    
-    fn from_i32(&self, value: u32) -> u32 {
-        value
-    }
-
-    fn get_raw(&self, size: &Size, bytes: &[u8]) -> u32 {
-        match size {
-            &Bits64 => LittleEndian::read_u32(&bytes[4..]),
-            &Bits32 => LittleEndian::read_u32(bytes),
-            &Bits16 => LittleEndian::read_u16(bytes) as u32,
-            &Bits8  => bytes[0] as u32,
-        }
-    }
-
-    fn set_raw(&self, size: &Size, bytes: &mut [u8], value: u32) {
-        match size {
-            &Bits64 => LittleEndian::write_u32(&mut bytes[4..], value),
-            &Bits32 => LittleEndian::write_u32(bytes, value),
-            &Bits16 => LittleEndian::write_u16(bytes, value as u16),
-            &Bits8 => bytes[0] = value as u8,
-        }
-    }
-
-}
-
-impl Interpreter<f32> for Program {
-
-    fn binop_f32(&self, op: &BinOp, lhs: f32, rhs: f32) -> f32 {
-        match op {
-            &Add => (lhs + rhs),
-            &Copysign => (lhs * rhs.signum()),
-            &Div => (lhs / rhs),
-            &Max => (lhs.max(rhs)),
-            &Min => (lhs.min(rhs)),
-            &Mul => (lhs * rhs),
-            &Sub => (lhs - rhs),
-            _ => self.type_error(),
-        }
-    }
-
-    fn unop_f32(&self, op: &UnaryOp, arg: f32) -> f32 {
-        match op {
-            &Abs => arg.abs(),
-            &Ceil => arg.ceil(),
-            &Floor => arg.floor(),
-            &Nearest => arg.round(),
-            &Neg => -arg,
-            &Sqrt => arg.sqrt(),
-            &Trunc => arg.trunc(),
-            _ => self.type_error(),
-        }
-    }
-    
-    fn from_f32(&self, value: f32) -> f32 {
-        value
-    }
-
-    fn get_raw(&self, size: &Size, bytes: &[u8]) -> f32 {
-        match size {
-            &Bits64 => LittleEndian::read_f32(&bytes[4..]),
-            &Bits32 => LittleEndian::read_f32(bytes),
-            _ => self.type_error(),
-        }
-    }
-
-    fn set_raw(&self, size: &Size, bytes: &mut [u8], value: f32) {
-        match size {
-            &Bits64 => LittleEndian::write_f32(&mut bytes[4..], value),
-            &Bits32 => LittleEndian::write_f32(bytes, value),
-            _ => self.type_error(),
-        }
-    }
-
 }
