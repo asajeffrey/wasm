@@ -103,7 +103,7 @@ trait Interpreter<T> {
     }
 
     fn interpret_expr(&mut self, expr: &Expr, locals: &mut[[u8;8]], heap: &mut Vec<u8>) -> T
-        where Self: Interpreter<f32> + Interpreter<f64> + Interpreter<i32> + Interpreter<i64> + Interpreter<u32> + Interpreter<u64> + FunctionTable,
+        where Self: Interpreter<()> + Interpreter<f32> + Interpreter<f64> + Interpreter<i32> + Interpreter<i64> + Interpreter<u32> + Interpreter<u64> + FunctionTable,
               T: Copy + Default,
     {
         // NOTE: currently only handling the control flow that can be dealt with in direct style.
@@ -142,30 +142,34 @@ trait Interpreter<T> {
             },
             &CallExpr(ref name, ref args) => {
                 let defn: Function = self.lookup_function(name);
-                let mut new_locals: Vec<[u8;8]> =
-                    defn.params.iter().zip(args).map(|(param, arg)| {
-                        match param.typ {
-                            F32 => {
-                                let value: f32 = self.interpret_expr(arg, locals, heap);
-                                self.as_raw(value)
-                            },
-                            F64 => {
-                                let value: f64 = self.interpret_expr(arg, locals, heap);
-                                self.as_raw(value)
-                            },
-                            I32 => {
-                                let value: u32 = self.interpret_expr(arg, locals, heap);
-                                self.as_raw(value)
-                            },
-                            I64 => {
-                                let value: u64 = self.interpret_expr(arg, locals, heap);
-                                self.as_raw(value)
-                            },
-                        }
-                    }).chain(repeat([0;8]).take(defn.locals.len())).collect();
-                defn.body.iter().map(|expr| {
-                    self.interpret_expr(expr, &mut *new_locals, heap)
-                }).last().unwrap_or_default()
+                let mut new_locals: Vec<[u8;8]> = defn.params.iter().zip(args).map(|(param, arg)| {
+                    match param.typ {
+                        F32 => {
+                            let value: f32 = self.interpret_expr(arg, locals, heap);
+                            self.as_raw(value)
+                        },
+                        F64 => {
+                            let value: f64 = self.interpret_expr(arg, locals, heap);
+                            self.as_raw(value)
+                        },
+                        I32 => {
+                            let value: u32 = self.interpret_expr(arg, locals, heap);
+                            self.as_raw(value)
+                        },
+                        I64 => {
+                            let value: u64 = self.interpret_expr(arg, locals, heap);
+                            self.as_raw(value)
+                        },
+                    }
+                }).chain(repeat([0;8]).take(defn.locals.len())).collect();
+                let last = defn.body.len() - 1;
+                for expr in &defn.body[..last] {
+                    let () = self.interpret_expr(expr, &mut *new_locals, heap);
+                }
+                for expr in &defn.body[last..] {
+                    return self.interpret_expr(expr, &mut *new_locals, heap);
+                }
+                T::default()
             },
             &ConstExpr(F32Const(value)) => self.from_f32(value),
             &ConstExpr(F64Const(value)) => self.from_f64(value),
@@ -235,15 +239,25 @@ pub struct Program;
 
 impl Interpreter<()> for Program {
 
-    fn get_raw(&self, _: &Size, _: &[u8]) -> () {
-        self.type_error()
-    }
+    fn get_raw(&self, _: &Size, _: &[u8]) {}
+    fn set_raw(&self, _: &Size, _: &mut [u8], _: ()) {}
 
-    fn set_raw(&self, _: &Size, _: &mut [u8], _: ()) {
-        self.type_error()
-    }
+    fn binop_f32(&self, _: &BinOp, _: f32, _: f32) {}
+    fn binop_f64(&self, _: &BinOp, _: f64, _: f64) {}
+    fn binop_i32(&self, _: &BinOp, _: i32, _: i32) {}
+    fn binop_i64(&self, _: &BinOp, _: i64, _: i64) {}
+    fn binop_u32(&self, _: &BinOp, _: u32, _: u32) {}
+    fn binop_u64(&self, _: &BinOp, _: u64, _: u64) {}
+    
+    fn unop_f32(&self, _: &UnaryOp, _: f32) {}
+    fn unop_f64(&self, _: &UnaryOp, _: f64) {}
+    fn unop_i32(&self, _: &UnaryOp, _: i32) {}
+    fn unop_i64(&self, _: &UnaryOp, _: i64) {}
+    fn unop_u32(&self, _: &UnaryOp, _: u32) {}
+    fn unop_u64(&self, _: &UnaryOp, _: u64) {}
 
 }
+
 
 impl Interpreter<u32> for Program {
 
