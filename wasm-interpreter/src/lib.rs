@@ -270,6 +270,7 @@ impl Interpreter<u32> for Program {
             &Mul => (lhs.wrapping_mul(rhs)),
             &Ne => (lhs != rhs) as u32,
             &Or => (lhs | rhs),
+            &Rem => (lhs % rhs),
             &RotL => (lhs.rotate_left(rhs)),
             &RotR => (lhs.rotate_right(rhs)),
             &Shl => (lhs.wrapping_shl(rhs)),
