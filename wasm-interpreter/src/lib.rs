@@ -165,6 +165,56 @@ impl<I> InterpretPrimitives<()> for I {
 
 }
 
+impl<I> InterpretPrimitives<f32> for I {
+
+    fn binop_f32(&self, op: &BinOp, lhs: f32, rhs: f32) -> f32 {
+        match op {
+            &Add => (lhs + rhs),
+            &Copysign => (lhs * rhs.signum()),
+            &Div => (lhs / rhs),
+            &Max => (lhs.max(rhs)),
+            &Min => (lhs.min(rhs)),
+            &Mul => (lhs * rhs),
+            &Sub => (lhs - rhs),
+            _ => self.type_error(),
+        }
+    }
+
+    fn unop_f32(&self, op: &UnaryOp, arg: f32) -> f32 {
+        match op {
+            &Abs => arg.abs(),
+            &Ceil => arg.ceil(),
+            &Floor => arg.floor(),
+            &Nearest => arg.round(),
+            &Neg => -arg,
+            &Sqrt => arg.sqrt(),
+            &Trunc => arg.trunc(),
+            _ => self.type_error(),
+        }
+    }
+
+    fn from_f32(&self, value: f32) -> f32 {
+        value
+    }
+
+    fn get_raw(&self, size: &Size, bytes: &[u8]) -> f32 {
+        match size {
+            &Bits64 => LittleEndian::read_f32(&bytes[4..]),
+            &Bits32 => LittleEndian::read_f32(bytes),
+            _ => self.type_error(),
+        }
+    }
+
+    fn set_raw(&self, size: &Size, bytes: &mut [u8], value: f32) {
+        match size {
+            &Bits64 => LittleEndian::write_f32(&mut bytes[4..], value),
+            &Bits32 => LittleEndian::write_f32(bytes, value),
+            _ => self.type_error(),
+        }
+    }
+
+}
+
 impl<I> InterpretPrimitives<u32> for I {
 
     fn binop_i32(&self, op: &BinOp, lhs: i32, rhs: i32) -> u32 {
@@ -242,56 +292,6 @@ impl<I> InterpretPrimitives<u32> for I {
             &Bits32 => LittleEndian::write_u32(bytes, value),
             &Bits16 => LittleEndian::write_u16(bytes, value as u16),
             &Bits8 => bytes[0] = value as u8,
-        }
-    }
-
-}
-
-impl<I> InterpretPrimitives<f32> for I {
-
-    fn binop_f32(&self, op: &BinOp, lhs: f32, rhs: f32) -> f32 {
-        match op {
-            &Add => (lhs + rhs),
-            &Copysign => (lhs * rhs.signum()),
-            &Div => (lhs / rhs),
-            &Max => (lhs.max(rhs)),
-            &Min => (lhs.min(rhs)),
-            &Mul => (lhs * rhs),
-            &Sub => (lhs - rhs),
-            _ => self.type_error(),
-        }
-    }
-
-    fn unop_f32(&self, op: &UnaryOp, arg: f32) -> f32 {
-        match op {
-            &Abs => arg.abs(),
-            &Ceil => arg.ceil(),
-            &Floor => arg.floor(),
-            &Nearest => arg.round(),
-            &Neg => -arg,
-            &Sqrt => arg.sqrt(),
-            &Trunc => arg.trunc(),
-            _ => self.type_error(),
-        }
-    }
-
-    fn from_f32(&self, value: f32) -> f32 {
-        value
-    }
-
-    fn get_raw(&self, size: &Size, bytes: &[u8]) -> f32 {
-        match size {
-            &Bits64 => LittleEndian::read_f32(&bytes[4..]),
-            &Bits32 => LittleEndian::read_f32(bytes),
-            _ => self.type_error(),
-        }
-    }
-
-    fn set_raw(&self, size: &Size, bytes: &mut [u8], value: f32) {
-        match size {
-            &Bits64 => LittleEndian::write_f32(&mut bytes[4..], value),
-            &Bits32 => LittleEndian::write_f32(bytes, value),
-            _ => self.type_error(),
         }
     }
 
