@@ -30,6 +30,7 @@ pub enum Const {
 #[derive(Clone, PartialEq, PartialOrd, Debug)]
 pub enum Expr {
     BinOpExpr(SignedTyp, BinOp, Box<Expr>, Box<Expr>),
+    CallExpr(String, Vec<Expr>),
     ConstExpr(Const),
     GetLocalExpr(VarUse),
     GrowMemoryExpr(Box<Expr>),

@@ -6,15 +6,21 @@ use byteorder::{ByteOrder, LittleEndian};
 use std::iter::repeat;
 use std::default::Default;
 
-use wasm_ast::{BinOp, Expr, Size, UnaryOp};
+use wasm_ast::{BinOp, Expr, Function, Size, UnaryOp};
 use wasm_ast::BinOp::{Add, And, Copysign, Div, Eq, Ge, Gt, Le, Lt, Max, Min, Mul, Ne};
 use wasm_ast::BinOp::{Or, Rem, RotL, RotR, Shl, Shr, Sub, Xor};
 use wasm_ast::Const::{F32Const, F64Const, I32Const, I64Const};
-use wasm_ast::Expr::{BinOpExpr, ConstExpr, GetLocalExpr, GrowMemoryExpr, IfThenExpr, IfThenElseExpr, LoadExpr, NopExpr, SetLocalExpr, StoreExpr, UnaryOpExpr};
+use wasm_ast::Expr::{BinOpExpr, CallExpr, ConstExpr, GetLocalExpr, GrowMemoryExpr, IfThenExpr, IfThenElseExpr, LoadExpr, NopExpr, SetLocalExpr, StoreExpr, UnaryOpExpr};
 use wasm_ast::Size::{Bits8, Bits16, Bits32, Bits64};
 use wasm_ast::SignedTyp::{F32s, F64s, I32s, I64s, U32s, U64s};
 use wasm_ast::Typ::{F32, F64, I32, I64};
 use wasm_ast::UnaryOp::{Abs, Ceil, Clz, Ctz, Eqz, Floor, Nearest, Neg, Popcnt, Sqrt, Trunc};
+
+trait FunctionTable {
+
+    fn lookup_function(&self, name: &str) -> Function;
+
+}
 
 trait Interpreter<T> {
 
@@ -22,6 +28,12 @@ trait Interpreter<T> {
 
     fn set_raw(&self, _: &Size, _: &mut[u8], _: T);
 
+    fn as_raw(&self, value: T) -> [u8;8] {
+        let mut result = [0;8];
+        self.set_raw(&Bits64, &mut result, value);
+        result
+    }
+                                          
     fn type_error(&self) -> T {
         panic!("Type error.")
     }
@@ -91,7 +103,7 @@ trait Interpreter<T> {
     }
 
     fn interpret_expr(&mut self, expr: &Expr, locals: &mut[[u8;8]], heap: &mut Vec<u8>) -> T
-        where Self: Interpreter<f32> + Interpreter<f64> + Interpreter<i32> + Interpreter<i64> + Interpreter<u32> + Interpreter<u64>,
+        where Self: Interpreter<f32> + Interpreter<f64> + Interpreter<i32> + Interpreter<i64> + Interpreter<u32> + Interpreter<u64> + FunctionTable,
               T: Copy + Default,
     {
         // NOTE: currently only handling the control flow that can be dealt with in direct style.
@@ -127,6 +139,33 @@ trait Interpreter<T> {
                 let lhs: u64 = self.interpret_expr(lhs, locals, heap);
                 let rhs: u64 = self.interpret_expr(rhs, locals, heap);
                 self.binop_u64(op, lhs, rhs)
+            },
+            &CallExpr(ref name, ref args) => {
+                let defn: Function = self.lookup_function(name);
+                let mut new_locals: Vec<[u8;8]> =
+                    defn.params.iter().zip(args).map(|(param, arg)| {
+                        match param.typ {
+                            F32 => {
+                                let value: f32 = self.interpret_expr(arg, locals, heap);
+                                self.as_raw(value)
+                            },
+                            F64 => {
+                                let value: f64 = self.interpret_expr(arg, locals, heap);
+                                self.as_raw(value)
+                            },
+                            I32 => {
+                                let value: u32 = self.interpret_expr(arg, locals, heap);
+                                self.as_raw(value)
+                            },
+                            I64 => {
+                                let value: u64 = self.interpret_expr(arg, locals, heap);
+                                self.as_raw(value)
+                            },
+                        }
+                    }).chain(repeat([0;8]).take(defn.locals.len())).collect();
+                defn.body.iter().map(|expr| {
+                    self.interpret_expr(expr, &mut *new_locals, heap)
+                }).last().unwrap_or_default()
             },
             &ConstExpr(F32Const(value)) => self.from_f32(value),
             &ConstExpr(F64Const(value)) => self.from_f64(value),
@@ -189,11 +228,10 @@ trait Interpreter<T> {
             },
        }
     }
-
+    
 }
 
 pub struct Program;
-
 
 impl Interpreter<()> for Program {
 
