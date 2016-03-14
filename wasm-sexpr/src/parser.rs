@@ -209,9 +209,9 @@ fn is_begin_bin_op_expr<'a>(tok: &Token<'a>) -> Option<(SignedTyp, BinOp)> {
             "i64.shr_u" => Some((U64s, Shr)),
             "i64.sub" => Some((U64s, Sub)),
             "i64.xor" => Some((U64s, Xor)),
-            
+
             _ => None,
-            
+
         },
         _ => None,
     }
@@ -248,7 +248,7 @@ fn is_begin_unary_op_expr<'a>(tok: &Token<'a>) -> Option<(Typ, UnaryOp)> {
             "i64.eqz" => Some((I64, Eqz)),
 
             _ => None,
-            
+
         },
         _ => None,
     }
@@ -280,7 +280,7 @@ fn mk_get_local_expr<'a>(name: Option<String>, position: usize, _: Token<'a>) ->
     GetLocalExpr(VarUse{ name: name, position: position })
 }
 
-fn mk_expected_expr_err<'a>(_: Option<Token<'a>>) -> Result<Expr, ParseError> { 
+fn mk_expected_expr_err<'a>(_: Option<Token<'a>>) -> Result<Expr, ParseError> {
     Err(ExpectedExprErr)
 }
 
@@ -374,7 +374,7 @@ pub enum Declaration {
 pub struct Declarations {
     pub imports: Vec<Import>,
     pub exports: Vec<Export>,
-    pub functions: Vec<Function>,    
+    pub functions: Vec<Function>,
 }
 
 impl StaticMarker for Declaration {}
@@ -431,7 +431,7 @@ impl<'a> Uncommitted<Token<'a>, Tokens<'a>, WasmParserOutput<Expr>> for EXPR {
     fn init(&self, data: &mut Tokens<'a>) -> Option<ParseResult<WasmParserState<Expr>, WasmParserOutput<Expr>>> {
 
         let EXPECTED_EXPR = CHARACTER.map(mk_expected_expr_err);
-        
+
         let BIN_OP_EXPR = character_map_ref(is_begin_bin_op_expr)
             .and_then_try(EXPR.or_else(EXPECTED_EXPR))
             .try_and_then_try(EXPR.or_else(EXPECTED_EXPR))
@@ -448,7 +448,7 @@ impl<'a> Uncommitted<Token<'a>, Tokens<'a>, WasmParserOutput<Expr>> for EXPR {
             .and_then_try(CHARACTER.map(must_be_number))
             .try_and_then_try(CHARACTER.map(must_be_end))
             .try_map3(mk_get_local_expr);
-        
+
         BIN_OP_EXPR
             .or_else(CONST_EXPR)
             .or_else(GET_LOCAL_EXPR)

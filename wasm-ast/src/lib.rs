@@ -3,7 +3,7 @@ extern crate parsell;
 use parsell::{StaticMarker};
 
 #[derive(Clone, Eq, PartialEq, Hash, Ord, PartialOrd, Debug)]
-pub enum BinOp {    
+pub enum BinOp {
     Add, And, Copysign, Div, Eq, Ge, Gt, Le, Lt, Max, Min, Mul, Ne,
     Or, Rem, RotL, RotR, Shl, Shr, Sub, Xor
 }
