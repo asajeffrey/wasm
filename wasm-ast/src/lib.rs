@@ -2,13 +2,13 @@ extern crate parsell;
 
 use parsell::{StaticMarker};
 
-#[derive(Clone, Eq, PartialEq, Hash, Ord, PartialOrd, Debug)]
+#[derive(Clone, Copy, Eq, PartialEq, Hash, Ord, PartialOrd, Debug)]
 pub enum BinOp {
     Add, And, Copysign, Div, Eq, Ge, Gt, Le, Lt, Max, Min, Mul, Ne,
     Or, Rem, RotL, RotR, Shl, Shr, Sub, Xor
 }
 
-#[derive(Clone, Eq, PartialEq, Hash, Ord, PartialOrd, Debug)]
+#[derive(Clone, Copy, Eq, PartialEq, Hash, Ord, PartialOrd, Debug)]
 pub enum UnaryOp {
     Abs, Ceil, Clz, Ctz, Eqz, Floor, Nearest, Neg, Popcnt, Sqrt, Trunc
 }
@@ -19,7 +19,7 @@ pub struct Export {
     pub func: String,
 }
 
-#[derive(Clone, PartialEq, PartialOrd, Debug)]
+#[derive(Clone, Copy, PartialEq, PartialOrd, Debug)]
 pub enum Const {
     F32Const(f32),
     F64Const(f64),
@@ -83,7 +83,7 @@ pub struct Segment {
     pub data: String,
 }
 
-#[derive(Clone, Eq, PartialEq, Hash, Ord, PartialOrd, Debug)]
+#[derive(Clone, Copy, Eq, PartialEq, Hash, Ord, PartialOrd, Debug)]
 pub enum Size {
     Bits8,
     Bits16,
@@ -91,7 +91,7 @@ pub enum Size {
     Bits64,
 }
 
-#[derive(Clone, Eq, PartialEq, Hash, Ord, PartialOrd, Debug)]
+#[derive(Clone, Copy, Eq, PartialEq, Hash, Ord, PartialOrd, Debug)]
 pub enum SignedTyp {
     I32s,
     I64s,
@@ -101,7 +101,7 @@ pub enum SignedTyp {
     U64s,
 }
 
-#[derive(Clone, Eq, PartialEq, Hash, Ord, PartialOrd, Debug)]
+#[derive(Clone, Copy, Eq, PartialEq, Hash, Ord, PartialOrd, Debug)]
 pub enum Typ {
     I32,
     I64,
