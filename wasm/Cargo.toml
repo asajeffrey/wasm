@@ -13,5 +13,6 @@ license = "MPL-2.0"
 [dependencies]
 parsell = "0.6.5"
 wasm_ast = { version = "0.0.1", path = "../wasm-ast" }
+wasm_typecheck = { version = "0.0.1", path = "../wasm-typecheck" }
 wasm_sexpr = { version = "0.0.1", path = "../wasm-sexpr" }
 wasm_interpreter = { version = "0.0.1", path = "../wasm-interpreter" }
